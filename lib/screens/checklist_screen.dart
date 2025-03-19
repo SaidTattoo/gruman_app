@@ -77,6 +77,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   Uint8List? clientSignature;
   Map<int, List<String>> subItemPhotosUrls = {};
   int? currentSubItemId;
+  Map<int, String> activoFijoEstados = {};
 
   @override
   void initState() {
@@ -93,6 +94,10 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           subItemStates[lista.id]![subItem.id] = CheckState.conforme;
         }
       }
+    }
+    // Inicializar estados de activos fijos como "funcionando"
+    for (var activo in widget.visit.local.activoFijoLocales) {
+      activoFijoEstados[activo.id] = 'funcionando';
     }
   }
 
@@ -815,66 +820,170 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: widget.listasInspeccion.length,
-              itemBuilder: (context, listIndex) {
-                final lista = widget.listasInspeccion[listIndex];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF3F3FFF).withOpacity(0.1),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(12),
-                          topRight: Radius.circular(12),
+              itemCount: widget.listasInspeccion.length +
+                  1, // +1 para la sección de activos fijos
+              itemBuilder: (context, index) {
+                if (index < widget.listasInspeccion.length) {
+                  final lista = widget.listasInspeccion[index];
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3F3FFF).withOpacity(0.1),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(12),
+                            topRight: Radius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          lista.name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                      child: Text(
-                        lista.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      ...lista.items
+                          .map((item) => Card(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Text(
+                                        item.name,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const Divider(height: 1),
+                                    ListView.builder(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: item.subItems.length,
+                                      itemBuilder: (context, subIndex) {
+                                        final subItem = item.subItems[subIndex];
+                                        return _buildChecklistItem(
+                                            lista, subItem);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                      const SizedBox(height: 24), // Espacio entre listas
+                    ],
+                  );
+                } else {
+                  // Sección de Activos Fijos
+                  return Column(
+                    children: [
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3F3FFF).withOpacity(0.1),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(12),
+                            topRight: Radius.circular(12),
+                          ),
                         ),
-                        textAlign: TextAlign.center,
+                        child: const Text(
+                          'Activos Fijos del Local',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                    ),
-                    ...lista.items
-                        .map((item) => Card(
-                              margin: const EdgeInsets.only(bottom: 16),
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: widget.visit.local.activoFijoLocales.length,
+                        itemBuilder: (context, index) {
+                          final activo =
+                              widget.visit.local.activoFijoLocales[index];
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Text(
-                                      item.name,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                  Text(
+                                    '${activo.tipoEquipo} - ${activo.marca}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  const Divider(height: 1),
-                                  ListView.builder(
-                                    shrinkWrap: true,
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    itemCount: item.subItems.length,
-                                    itemBuilder: (context, subIndex) {
-                                      final subItem = item.subItems[subIndex];
-                                      return _buildChecklistItem(
-                                          lista, subItem);
-                                    },
+                                  const SizedBox(height: 8),
+                                  Text('Código: ${activo.codigoActivo}'),
+                                  Text('Potencia: ${activo.potenciaEquipo}'),
+                                  Text('Refrigerante: ${activo.refrigerante}'),
+                                  Text('Tipo: ${activo.onOffInverter}'),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Text('Estado: '),
+                                      DropdownButton<String>(
+                                        value: activoFijoEstados[activo.id],
+                                        items: const [
+                                          DropdownMenuItem(
+                                            value: 'funcionando',
+                                            child: Text('Funcionando'),
+                                          ),
+                                          DropdownMenuItem(
+                                            value: 'detenido',
+                                            child: Text('Detenido'),
+                                          ),
+                                        ],
+                                        onChanged: (String? newValue) {
+                                          if (newValue != null) {
+                                            setState(() {
+                                              activoFijoEstados[activo.id] =
+                                                  newValue;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                      const Spacer(),
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _showRepuestosDialog(activo.id),
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('Repuesto'),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor:
+                                              const Color(0xFF3F3FFF),
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                  if (subItemRepuestos[activo.id]?.isNotEmpty ??
+                                      false)
+                                    ...subItemRepuestos[activo.id]!
+                                        .map((repuesto) => _buildRepuestoItem(
+                                            repuesto, activo.id))
+                                        .toList(),
                                 ],
                               ),
-                            ))
-                        .toList(),
-                    const SizedBox(height: 24), // Espacio entre listas
-                  ],
-                );
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  );
+                }
               },
             ),
           ),
@@ -1102,54 +1211,75 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     try {
       Map<String, dynamic> payload = {
         'firma_cliente': signature,
-        'repuestos': {},
-        'activoFijoRepuestos': [
-          {
-            'id': 1, // Ajusta según necesites
-            'estadoOperativo': 'funcionando',
+        'repuestos': <String, dynamic>{},
+        'activoFijoRepuestos':
+            widget.visit.local.activoFijoLocales.map((activo) {
+          final repuestosActivo = subItemRepuestos[activo.id] ?? [];
+          return {
+            'id': activo.id,
+            'estadoOperativo': activoFijoEstados[activo.id] ?? 'funcionando',
             'observacionesEstado': '',
             'fechaRevision': DateTime.now().toIso8601String(),
+            'activoFijoId': activo.id,
             'activoFijo': {
-              'id': widget.visit.activoFijo?.id ?? 0,
-              'tipo_equipo': widget.visit.activoFijo?.tipoEquipo ?? '',
-              'marca': widget.visit.activoFijo?.marca ?? '',
+              'id': activo.id,
+              'tipo_equipo': activo.tipoEquipo,
+              'marca': activo.marca,
             },
-            'detallesRepuestos': []
-          }
-        ]
+            'repuestos': repuestosActivo
+                .map((repuesto) => {
+                      'id': 1,
+                      'cantidad': repuesto.cantidad,
+                      'comentario': repuesto.comentario ?? '',
+                      'estado': 'pendiente',
+                      'precio_unitario': repuesto.repuesto.precio ?? 0,
+                      'repuesto': {
+                        'id': repuesto.repuesto.id,
+                        'nombre': repuesto.repuesto.articulo,
+                      }
+                    })
+                .toList()
+          };
+        }).toList()
       };
 
-      // Iterar sobre las listas de inspección
+      // Agregar los items de inspección y sus repuestos
       for (var lista in widget.listasInspeccion) {
         for (var item in lista.items) {
+          // Crear un mapa para almacenar todos los repuestos del item
+          Map<String, dynamic> itemData = {
+            'id': item.id,
+            'estado': 'conforme',
+            'comentario': '',
+            'fotos': [],
+            'repuestos': <Map<String, dynamic>>[]
+          };
+
+          // Agregar los repuestos de todos los subItems al item padre
           for (var subItem in item.subItems) {
             String estado = _getEstadoString(
                 subItemStates[lista.id]?[subItem.id] ?? CheckState.conforme);
 
-            Map<String, dynamic> subItemData = {
-              'estado': estado,
-              'comentario': subItemComments[subItem.id] ?? '',
-              'fotos': subItemPhotosUrls[subItem.id] ?? [],
-              'repuestos': []
-            };
+            // Agregar fotos del subItem
+            if (subItemPhotosUrls[subItem.id]?.isNotEmpty ?? false) {
+              itemData['fotos'].addAll(subItemPhotosUrls[subItem.id] ?? []);
+            }
 
-            // Agregar repuestos si existen
-            if (subItemRepuestos[subItem.id] != null) {
+            // Agregar comentario si existe
+            if (subItemComments[subItem.id]?.isNotEmpty ?? false) {
+              itemData['comentario'] = subItemComments[subItem.id];
+            }
+
+            // Si el estado no es conforme, actualizar el estado del item
+            if (estado != 'conforme') {
+              itemData['estado'] = estado;
+            }
+
+            // Agregar repuestos del subItem
+            if (subItemRepuestos[subItem.id]?.isNotEmpty ?? false) {
               for (var repuesto in subItemRepuestos[subItem.id]!) {
-                subItemData['repuestos'].add({
-                  'cantidad': repuesto.cantidad,
-                  'comentario': repuesto.comentario ?? '',
-                  'repuesto': {
-                    'id': repuesto.repuesto.id,
-                    'articulo': repuesto.repuesto.articulo,
-                    'familia': repuesto.repuesto.familia,
-                    'marca': repuesto.repuesto.marca,
-                  }
-                });
-
-                // Agregar a activoFijoRepuestos si es necesario
-                payload['activoFijoRepuestos'][0]['detallesRepuestos'].add({
-                  'id': 1, // Ajusta según necesites
+                itemData['repuestos'].add({
+                  'id': 1,
                   'cantidad': repuesto.cantidad,
                   'comentario': repuesto.comentario ?? '',
                   'estado': 'pendiente',
@@ -1157,16 +1287,19 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                   'repuesto': {
                     'id': repuesto.repuesto.id,
                     'nombre': repuesto.repuesto.articulo,
-                    // Otros campos del repuesto si son necesarios
                   }
                 });
               }
             }
-
-            payload['repuestos'][subItem.id.toString()] = subItemData;
           }
+
+          // Siempre agregar el item al payload
+          payload['repuestos'][item.id.toString()] = itemData;
         }
       }
+
+      print('Payload final:');
+      print(jsonEncode(payload));
 
       final response =
           await ApiService.finalizarVisita(widget.visit.id, payload);
@@ -1176,16 +1309,53 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } else {
+        print('Error response: ${response.body}');
         throw Exception('Error al finalizar la visita: ${response.statusCode}');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al finalizar la visita: $e')),
-      );
+      print('Exception details: $e');
+
+      String errorMessage = '';
+      try {
+        if (e.toString().contains('Exception:')) {
+          errorMessage = e.toString().replaceAll('Exception:', '').trim();
+          if (errorMessage.contains('{')) {
+            final errorJson = jsonDecode(errorMessage);
+            if (errorJson['message'] is List) {
+              errorMessage = (errorJson['message'] as List).join('\n');
+            } else {
+              errorMessage = errorJson['message'].toString();
+            }
+          }
+        } else {
+          errorMessage = e.toString();
+        }
+      } catch (_) {
+        errorMessage = e.toString();
+      }
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Error al finalizar la visita'),
+              content: SingleChildScrollView(
+                child: Text(errorMessage),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          },
+        );
+      }
     }
   }
 
-  // Agregar este método helper
   String _getEstadoString(CheckState state) {
     switch (state) {
       case CheckState.conforme:
