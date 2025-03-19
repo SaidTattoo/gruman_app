@@ -1,14 +1,18 @@
+import 'activo_fijo_model.dart';
+
 class Local {
   final int id;
   final String direccion;
   final String nombreLocal;
   final String numeroLocal;
+  final List<ActivoFijo> activoFijoLocales;
 
   Local({
     required this.id,
     required this.direccion,
     required this.nombreLocal,
     required this.numeroLocal,
+    required this.activoFijoLocales,
   });
 
   factory Local.fromJson(Map<String, dynamic> json) {
@@ -17,7 +21,21 @@ class Local {
       direccion: json['direccion'] as String,
       nombreLocal: json['nombre_local'] as String,
       numeroLocal: json['numeroLocal'] as String,
+      activoFijoLocales: (json['activoFijoLocales'] as List<dynamic>?)
+              ?.map((e) => ActivoFijo.fromJson(e))
+              .toList() ??
+          [],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'direccion': direccion,
+      'nombre_local': nombreLocal,
+      'numeroLocal': numeroLocal,
+      'activoFijoLocales': activoFijoLocales.map((e) => e.toJson()).toList(),
+    };
   }
 }
 
@@ -64,5 +82,20 @@ class Visit {
               .toList() ??
           [],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'tipo_mantenimiento': tipoMantenimiento,
+      'fechaIngreso': fechaIngreso.toIso8601String(),
+      'observaciones': observaciones,
+      'status': status,
+      'fechaVisita': fechaVisita.toIso8601String(),
+      'local': local.toJson(),
+      'client': client,
+      'fecha_hora_inicio_servicio': fechaHoraInicioServicio?.toIso8601String(),
+      'activoFijoRepuestos': activoFijoRepuestos,
+    };
   }
 }

@@ -115,6 +115,9 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   int? currentSubItemId;
   Map<int, String> activoFijoEstados = {};
   Map<int, List<RepuestoAsignado>> activoFijoRepuestos = {};
+  final observacionesController = TextEditingController();
+  final nombreFirmanteController = TextEditingController();
+  final cargoFirmanteController = TextEditingController();
 
   @override
   void initState() {
@@ -748,36 +751,70 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
         '${repuestoAsignado.repuesto.familia} - ${repuestoAsignado.repuesto.marca}',
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: Wrap(
-        spacing: 4,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           IconButton(
+            icon: const Icon(
+              Icons.remove_circle_outline,
+              size: 28,
+            ),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.remove_circle_outline, size: 20),
+            constraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 40,
+            ),
             onPressed: () {
               setState(() {
                 if (repuestoAsignado.cantidad > 1) {
                   repuestoAsignado.cantidad--;
+                } else {
+                  subItemRepuestos[subItemId]?.remove(repuestoAsignado);
                 }
               });
             },
           ),
-          Text('${repuestoAsignado.cantidad}'),
+          Container(
+            width: 30,
+            alignment: Alignment.center,
+            child: Text(
+              '${repuestoAsignado.cantidad}',
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1,
+              ),
+            ),
+          ),
           IconButton(
+            icon: const Icon(
+              Icons.add_circle_outline,
+              size: 28,
+            ),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.add_circle_outline, size: 20),
+            constraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 40,
+            ),
             onPressed: () {
               setState(() {
                 repuestoAsignado.cantidad++;
               });
             },
           ),
+          const SizedBox(width: 16),
           IconButton(
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 28,
+              color: Colors.red,
+            ),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+            constraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 40,
+            ),
             onPressed: () {
               setState(() {
                 subItemRepuestos[subItemId]?.remove(repuestoAsignado);
@@ -1145,63 +1182,68 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
 
   Future<void> _finalizarVisita(String signature) async {
     try {
-      Map<String, dynamic> payload = {
-        'firma_cliente': signature,
-        'repuestos': {}
-      };
+      // Preparar los datos de activos fijos
+      final activosFijosData = activoFijoRepuestos.entries.map((entry) {
+        final activoId = entry.key;
+        final repuestos = entry.value;
 
-      // Iterar sobre las listas de inspección
-      for (var lista in widget.listasInspeccion) {
-        for (var item in lista.items) {
-          for (var subItem in item.subItems) {
-            // Convertir el enum CheckState a string
-            String estado = _getEstadoString(
-                subItemStates[lista.id]?[subItem.id] ?? CheckState.conforme);
+        return {
+          "activoFijoId": activoId,
+          "estadoOperativo": activoFijoEstados[activoId] ?? 'funcionando',
+          "observacionesEstado": "",
+          "repuestos": repuestos
+              .map((repuesto) => {
+                    "repuestoId": repuesto.repuesto.id,
+                    "cantidad": repuesto.cantidad,
+                    "comentario": repuesto.comentario ?? "",
+                    "estado": "pendiente",
+                    "precio_unitario": repuesto.repuesto.precio,
+                  })
+              .toList(),
+        };
+      }).toList();
 
-            Map<String, dynamic> subItemData = {
-              'estado': estado,
-              'comentario': subItemComments[subItem.id] ?? '',
-              'fotos': subItemPhotosUrls[subItem.id] ?? [],
-              'repuestos': []
-            };
+      // Enviar los datos de activos fijos
+      await _apiService.post(
+        'activo-fijo-repuestos/solicitud/${widget.visit.id}/repuestos',
+        {
+          "activoFijoRepuestos": activosFijosData,
+        },
+      );
 
-            // Agregar repuestos si existen
-            if (subItemRepuestos[subItem.id] != null) {
-              for (var repuesto in subItemRepuestos[subItem.id]!) {
-                subItemData['repuestos'].add({
-                  'cantidad': repuesto.cantidad,
-                  'comentario': repuesto.comentario ?? '',
-                  'repuesto': {
-                    'id': repuesto.repuesto.id,
-                    'articulo': repuesto.repuesto.articulo,
-                    'familia': repuesto.repuesto.familia,
-                    'marca': repuesto.repuesto.marca,
-                  }
-                });
-              }
-            }
+      // Enviar los datos de la visita
+      final response = await _apiService.post(
+        'visita/solicitud/${widget.visit.id}/finalizar',
+        {
+          "observaciones": observacionesController.text,
+          "firma": signature,
+          "nombreFirmante": nombreFirmanteController.text,
+          "cargoFirmante": cargoFirmanteController.text,
+        },
+      );
 
-            payload['repuestos'][subItem.id.toString()] = subItemData;
-          }
-        }
-      }
-
-      // Enviar el payload al servidor
-      final response =
-          await ApiService.finalizarVisita(widget.visit.id, payload);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        // Redirigir al listado
+      if (response.statusCode == 200) {
         if (mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Visita finalizada con éxito'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.of(context).pop(true);
         }
       } else {
-        throw Exception('Error al finalizar la visita: ${response.statusCode}');
+        throw Exception('Error al finalizar la visita');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al finalizar la visita: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al finalizar la visita: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1217,47 +1259,14 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     }
   }
 
-  // Agregar este método para mostrar el diálogo de repuestos
-  void _showActivoFijoRepuestosDialog(int activoId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Repuesto'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: repuestos?.length ?? 0,
-            itemBuilder: (context, index) {
-              final repuesto = repuestos![index];
-              return ListTile(
-                title: Text(repuesto.articulo),
-                subtitle: Text('${repuesto.familia} - ${repuesto.marca}'),
-                onTap: () {
-                  setState(() {
-                    if (activoFijoRepuestos[activoId] == null) {
-                      activoFijoRepuestos[activoId] = [];
-                    }
-                    activoFijoRepuestos[activoId]!.add(
-                      RepuestoAsignado(
-                        repuesto: repuesto,
-                        cantidad: 1,
-                        comentario: '',
-                      ),
-                    );
-                  });
-                  Navigator.pop(context);
-                },
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
   // Modificar el widget _buildActivosFijos para incluir la sección de repuestos
   Widget _buildActivosFijos() {
+    // Acceder a los datos raw de la visita
+    final visitData = widget.visit.toJson();
+    final localData = visitData['local'] as Map<String, dynamic>;
+    final activoFijoLocales =
+        localData['activoFijoLocales'] as List<dynamic>? ?? [];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1287,24 +1296,26 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...widget.visit.activoFijoRepuestos.map((activo) {
+                ...activoFijoLocales.map((activo) {
                   final activoId = activo['id'] as int;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ListTile(
-                        title: Text(
-                            'Equipo: ${activo['activoFijo']['tipo_equipo']}'),
+                        title: Text('Equipo: ${activo['tipo_equipo']}'),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Marca: ${activo['activoFijo']['marca']}'),
-                            Text(
-                                'Código: ${activo['activoFijo']['codigo_activo']}'),
+                            Text('Marca: ${activo['marca']}'),
+                            Text('Código: ${activo['codigo_activo']}'),
+                            Text('Potencia: ${activo['potencia_equipo']}'),
+                            Text('Refrigerante: ${activo['refrigerante']}'),
+                            Text('Tipo: ${activo['on_off_inverter']}'),
+                            Text('Suministra: ${activo['suministra']}'),
                             const SizedBox(height: 16),
                             DropdownButtonFormField<String>(
-                              value: activoFijoEstados[activoId] ??
-                                  activo['estadoOperativo'],
+                              value:
+                                  activoFijoEstados[activoId] ?? 'funcionando',
                               decoration: const InputDecoration(
                                 labelText: 'Estado',
                                 isDense: true,
@@ -1341,21 +1352,101 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                             ),
                             if (activoFijoRepuestos[activoId]?.isNotEmpty ??
                                 false)
-                              ...activoFijoRepuestos[activoId]!.map(
-                                (repuesto) => ListTile(
-                                  dense: true,
-                                  title: Text(repuesto.repuesto.articulo),
-                                  subtitle:
-                                      Text('Cantidad: ${repuesto.cantidad}'),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.delete, size: 20),
-                                    onPressed: () {
-                                      setState(() {
-                                        activoFijoRepuestos[activoId]!
-                                            .remove(repuesto);
-                                      });
-                                    },
-                                  ),
+                              Container(
+                                margin: const EdgeInsets.only(top: 8),
+                                decoration: BoxDecoration(
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  children: activoFijoRepuestos[activoId]!
+                                      .map((repuesto) {
+                                    return ListTile(
+                                      dense: true,
+                                      title: Text(
+                                        repuesto.repuesto.articulo,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: Text(
+                                        '${repuesto.repuesto.familia} - ${repuesto.repuesto.marca}',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.remove_circle_outline,
+                                                size: 28),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 40,
+                                              minHeight: 40,
+                                            ),
+                                            onPressed: () {
+                                              setState(() {
+                                                if (repuesto.cantidad > 1) {
+                                                  repuesto.cantidad--;
+                                                } else {
+                                                  activoFijoRepuestos[activoId]!
+                                                      .remove(repuesto);
+                                                }
+                                              });
+                                            },
+                                          ),
+                                          Container(
+                                            width: 30,
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              '${repuesto.cantidad}',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                height: 1,
+                                              ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.add_circle_outline,
+                                                size: 28),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 40,
+                                              minHeight: 40,
+                                            ),
+                                            onPressed: () {
+                                              setState(() {
+                                                repuesto.cantidad++;
+                                              });
+                                            },
+                                          ),
+                                          const SizedBox(width: 16),
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.delete_outline,
+                                                size: 28,
+                                                color: Colors.red),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(
+                                              minWidth: 40,
+                                              minHeight: 40,
+                                            ),
+                                            onPressed: () {
+                                              setState(() {
+                                                activoFijoRepuestos[activoId]!
+                                                    .remove(repuesto);
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
                                 ),
                               ),
                           ],
@@ -1371,5 +1462,175 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
         ),
       ],
     );
+  }
+
+  // Modificar el método para mostrar el diálogo de repuestos de activos fijos
+  void _showActivoFijoRepuestosDialog(int activoId) {
+    String searchQuery = '';
+    List<Repuesto> filteredRepuestos = repuestos ?? [];
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              const Text('Seleccionar Repuesto'),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Buscar repuesto...',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      searchQuery = value.toLowerCase();
+                      filteredRepuestos = (repuestos ?? []).where((repuesto) {
+                        return repuesto.articulo
+                                .toLowerCase()
+                                .contains(searchQuery) ||
+                            repuesto.familia
+                                .toLowerCase()
+                                .contains(searchQuery) ||
+                            repuesto.marca.toLowerCase().contains(searchQuery);
+                      }).toList();
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      itemCount: filteredRepuestos.length,
+                      itemBuilder: (context, index) {
+                        final repuesto = filteredRepuestos[index];
+                        return ListTile(
+                          title: Text(repuesto.articulo),
+                          subtitle:
+                              Text('${repuesto.familia} - ${repuesto.marca}'),
+                          onTap: () {
+                            setState(() {
+                              if (activoFijoRepuestos[activoId] == null) {
+                                activoFijoRepuestos[activoId] = [];
+                              }
+                              // Verificar si el repuesto ya existe
+                              final existingRepuesto =
+                                  activoFijoRepuestos[activoId]!.firstWhere(
+                                (r) => r.repuesto.id == repuesto.id,
+                                orElse: () => RepuestoAsignado(
+                                  repuesto: repuesto,
+                                  cantidad: 0,
+                                  comentario: '',
+                                ),
+                              );
+
+                              if (existingRepuesto.cantidad == 0) {
+                                // Si no existe, agregarlo
+                                activoFijoRepuestos[activoId]!.add(
+                                  RepuestoAsignado(
+                                    repuesto: repuesto,
+                                    cantidad: 1,
+                                    comentario: '',
+                                  ),
+                                );
+                              } else {
+                                // Si existe, incrementar la cantidad
+                                existingRepuesto.cantidad++;
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _finalizarInspeccion() async {
+    try {
+      // Preparar los datos de los activos fijos
+      final activosFijosData = widget.visit.activoFijoRepuestos.map((activo) {
+        final activoId = activo['id'] as int;
+        final repuestosAsignados = activoFijoRepuestos[activoId] ?? [];
+
+        return {
+          "activoFijoId": activoId,
+          "estadoOperativo":
+              activoFijoEstados[activoId] ?? activo['estadoOperativo'],
+          "observacionesEstado": activo['observacionesEstado'] ?? "",
+          "repuestos": repuestosAsignados
+              .map((repuesto) => {
+                    "repuestoId": repuesto.repuesto.id,
+                    "cantidad": repuesto.cantidad,
+                    "comentario": repuesto.comentario ?? "",
+                    "estado": "pendiente",
+                    "precio_unitario": repuesto.repuesto.precio,
+                  })
+              .toList(),
+        };
+      }).toList();
+
+      // Enviar los datos de activos fijos al backend
+      await _apiService.post(
+        '/activo-fijo-repuestos/solicitud/${widget.visit.id}/repuestos',
+        {
+          "activoFijoRepuestos": activosFijosData,
+        },
+      );
+
+      // Continuar con el envío de los datos del checklist
+      final checklistData = widget.listasInspeccion.map((lista) {
+        // ... código existente para preparar datos del checklist ...
+      }).toList();
+
+      await _apiService.post(
+        '/inspeccion/solicitud/${widget.visit.id}/checklists',
+        {
+          "checklists": checklistData,
+        },
+      );
+
+      // Mostrar mensaje de éxito y navegar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Inspección finalizada con éxito'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al finalizar la inspección: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
