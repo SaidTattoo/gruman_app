@@ -1102,14 +1102,27 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     try {
       Map<String, dynamic> payload = {
         'firma_cliente': signature,
-        'repuestos': {}
+        'repuestos': {},
+        'activoFijoRepuestos': [
+          {
+            'id': 1, // Ajusta según necesites
+            'estadoOperativo': 'funcionando',
+            'observacionesEstado': '',
+            'fechaRevision': DateTime.now().toIso8601String(),
+            'activoFijo': {
+              'id': widget.visit.activoFijo?.id ?? 0,
+              'tipo_equipo': widget.visit.activoFijo?.tipoEquipo ?? '',
+              'marca': widget.visit.activoFijo?.marca ?? '',
+            },
+            'detallesRepuestos': []
+          }
+        ]
       };
 
       // Iterar sobre las listas de inspección
       for (var lista in widget.listasInspeccion) {
         for (var item in lista.items) {
           for (var subItem in item.subItems) {
-            // Convertir el enum CheckState a string
             String estado = _getEstadoString(
                 subItemStates[lista.id]?[subItem.id] ?? CheckState.conforme);
 
@@ -1133,6 +1146,20 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                     'marca': repuesto.repuesto.marca,
                   }
                 });
+
+                // Agregar a activoFijoRepuestos si es necesario
+                payload['activoFijoRepuestos'][0]['detallesRepuestos'].add({
+                  'id': 1, // Ajusta según necesites
+                  'cantidad': repuesto.cantidad,
+                  'comentario': repuesto.comentario ?? '',
+                  'estado': 'pendiente',
+                  'precio_unitario': repuesto.repuesto.precio ?? 0,
+                  'repuesto': {
+                    'id': repuesto.repuesto.id,
+                    'nombre': repuesto.repuesto.articulo,
+                    // Otros campos del repuesto si son necesarios
+                  }
+                });
               }
             }
 
@@ -1141,12 +1168,10 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
         }
       }
 
-      // Enviar el payload al servidor
       final response =
           await ApiService.finalizarVisita(widget.visit.id, payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Redirigir al listado
         if (mounted) {
           Navigator.of(context).popUntil((route) => route.isFirst);
         }

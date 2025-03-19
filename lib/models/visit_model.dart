@@ -21,6 +21,26 @@ class Local {
   }
 }
 
+class ActivoFijo {
+  final int id;
+  final String tipoEquipo;
+  final String marca;
+
+  ActivoFijo({
+    required this.id,
+    required this.tipoEquipo,
+    required this.marca,
+  });
+
+  factory ActivoFijo.fromJson(Map<String, dynamic> json) {
+    return ActivoFijo(
+      id: json['id'] as int,
+      tipoEquipo: json['tipo_equipo'] as String,
+      marca: json['marca'] as String,
+    );
+  }
+}
+
 class Visit {
   final int id;
   final String tipoMantenimiento;
@@ -31,6 +51,7 @@ class Visit {
   final Local local;
   final Map<String, dynamic> client;
   final DateTime? fechaHoraInicioServicio;
+  final ActivoFijo? activoFijo;
 
   Visit({
     required this.id,
@@ -42,6 +63,7 @@ class Visit {
     required this.local,
     required this.client,
     this.fechaHoraInicioServicio,
+    this.activoFijo,
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) {
@@ -56,6 +78,9 @@ class Visit {
       client: json['client'] as Map<String, dynamic>,
       fechaHoraInicioServicio: json['fecha_hora_inicio_servicio'] != null
           ? DateTime.parse(json['fecha_hora_inicio_servicio'] as String)
+          : null,
+      activoFijo: json['activo_fijo'] != null
+          ? ActivoFijo.fromJson(json['activo_fijo'])
           : null,
     );
   }
