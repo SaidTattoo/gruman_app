@@ -38,15 +38,3 @@ class Repuesto {
     );
   }
 }
-
-class RepuestoAsignado {
-  final Repuesto repuesto;
-  int cantidad;
-  String? comentario;
-
-  RepuestoAsignado({
-    required this.repuesto,
-    required this.cantidad,
-    this.comentario,
-  });
-}
