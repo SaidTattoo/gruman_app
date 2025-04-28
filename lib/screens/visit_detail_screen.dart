@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/visit_model.dart';
 import 'package:geolocator/geolocator.dart';
 import 'checklist_screen.dart';
+import 'checklist_no_clima.dart';
 import '../services/api_service.dart';
 import '../models/checklist_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
+import 'checklist_clima.dart';
 
 class VisitDetailScreen extends StatefulWidget {
   final Visit visit;
@@ -67,7 +69,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     }
   }
 
-  Future<void> _iniciarServicio() async {
+  void _iniciarServicio() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -104,19 +106,23 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
           ),
         );
 
-        final listaInspeccion = (currentVisit.client['listaInspeccion'] as List)
-            .map((item) => InspeccionList.fromJson(item))
-            .toList();
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChecklistScreen(
-              visit: currentVisit,
-              listasInspeccion: listaInspeccion,
+        List<InspeccionList> listaInspeccion = [];
+        try {
+          if (currentVisit.client['listaInspeccion'] != null) {
+            listaInspeccion = (currentVisit.client['listaInspeccion'] as List)
+                .map((item) => InspeccionList.fromJson(item))
+                .toList();
+          }
+        } catch (e) {
+          print('Error al cargar lista de inspección: $e');
+          // Mostrar mensaje al usuario
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error al cargar la lista de inspección'),
+              backgroundColor: Colors.orange,
             ),
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       print('Error: $e');
@@ -305,28 +311,55 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                       const SizedBox(height: 16),
                       _buildInfoRow(
                         Icons.calendar_today,
-                        'Fecha: ${_formatDate(currentVisit.fechaVisita)}',
+                        'Fecha: ${currentVisit.fechaVisita ?? 'No especificada'}',
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow(
                         Icons.access_time,
-                        'Hora: ${_formatTime(currentVisit.fechaVisita)}',
+                        'Hora: ${currentVisit.fechaVisita ?? 'No especificada'}',
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow(
                         Icons.engineering,
-                        'Tipo: ${currentVisit.tipoMantenimiento}',
+                        'Tipo: ${currentVisit.tipoMantenimiento ?? 'No especificado'}',
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow(
                         Icons.note,
                         'Estado: ${_getStatusText(currentVisit.status)}',
                       ),
-                      if (currentVisit.observaciones != null) ...[
+                      if (currentVisit.client['clima'] == true) ...[
                         const SizedBox(height: 12),
-                        _buildInfoRow(
-                          Icons.comment,
-                          'Observaciones: ${currentVisit.observaciones}',
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3F3FFF).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF3F3FFF),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.ac_unit,
+                                size: 16,
+                                color: Color(0xFF3F3FFF),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'CLIMA',
+                                style: TextStyle(
+                                  color: Color(0xFF3F3FFF),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ],
@@ -379,13 +412,26 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                                   .map((item) => InspeccionList.fromJson(item))
                                   .toList();
 
+                              final bool esVisitaClima =
+                                  currentVisit.client['clima'] == true;
+                              print('DEBUG - Datos de clima:');
+                              print('Cliente: ${currentVisit.client}');
+                              print(
+                                  'Valor clima: ${currentVisit.client['clima']}');
+                              print('Es visita clima: $esVisitaClima');
+
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => ChecklistScreen(
-                                    visit: currentVisit,
-                                    listasInspeccion: listaInspeccion,
-                                  ),
+                                  builder: (context) => esVisitaClima
+                                      ? ChecklistClima(
+                                          visit: currentVisit,
+                                          listasInspeccion: listaInspeccion,
+                                        )
+                                      : ChecklistScreen(
+                                          visit: currentVisit,
+                                          listasInspeccion: listaInspeccion,
+                                        ),
                                 ),
                               );
                             },
@@ -447,25 +493,38 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     );
   }
 
-  String _getStatusText(String status) {
-    switch (status) {
+  String _getStatusText(String? status) {
+    if (status == null) return 'Pendiente';
+    switch (status.toLowerCase()) {
       case 'pending':
         return 'Pendiente';
-      case 'en_servicio':
-        return 'En Servicio';
+      case 'in_progress':
+        return 'En Progreso';
       case 'completed':
-        return 'Completada';
+        return 'Completado';
       default:
         return status;
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+  String _formatDate(String? dateStr) {
+    if (dateStr == null) return 'Fecha no especificada';
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
   }
 
-  String _formatTime(DateTime date) {
-    String minutes = date.minute.toString().padLeft(2, '0');
-    return '${date.hour}:$minutes';
+  String _formatTime(String? dateStr) {
+    if (dateStr == null) return 'Hora no especificada';
+    try {
+      final date = DateTime.parse(dateStr);
+      String minutes = date.minute.toString().padLeft(2, '0');
+      return '${date.hour}:$minutes';
+    } catch (e) {
+      return dateStr;
+    }
   }
 }

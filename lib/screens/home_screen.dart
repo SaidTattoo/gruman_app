@@ -654,7 +654,7 @@ class _VisitsScreenState extends State<VisitsScreen> {
                                             ),
                                           ],
                                         ),
-                                        _buildStatusChip(visit.status),
+                                        _buildStatusChip(visit.status ?? ''),
                                       ],
                                     ),
                                     const SizedBox(height: 12),
@@ -702,19 +702,21 @@ class _VisitsScreenState extends State<VisitsScreen> {
                                     const SizedBox(height: 12),
                                     Row(
                                       children: [
-                                        _buildInfoChip(
+                                        /*  _buildInfoChip(
                                           Icons.calendar_today,
-                                          _formatDate(visit.fechaVisita),
+                                          _formatDate(visit.fechaVisita ??
+                                              DateTime.now()),
                                         ),
                                         const SizedBox(width: 8),
                                         _buildInfoChip(
                                           Icons.access_time,
-                                          _formatTime(visit.fechaVisita),
-                                        ),
+                                          _formatTime(visit.fechaVisita ??
+                                              DateTime.now()),
+                                        ), */
                                         const SizedBox(width: 8),
                                         _buildInfoChip(
                                           Icons.engineering,
-                                          visit.tipoMantenimiento,
+                                          visit.tipoMantenimiento ?? '',
                                         ),
                                       ],
                                     ),

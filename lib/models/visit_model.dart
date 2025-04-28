@@ -31,6 +31,19 @@ class ActivoFijoLocal {
       codigoActivo: json['codigo_activo'] as String,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'tipo_equipo': tipoEquipo,
+      'marca': marca,
+      'potencia_equipo': potenciaEquipo,
+      'refrigerante': refrigerante,
+      'on_off_inverter': onOffInverter,
+      'suministra': suministra,
+      'codigo_activo': codigoActivo,
+    };
+  }
 }
 
 class Local {
@@ -60,6 +73,16 @@ class Local {
           [],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'direccion': direccion,
+      'nombre_local': nombreLocal,
+      'numeroLocal': numeroLocal,
+      'activoFijoLocales': activoFijoLocales.map((e) => e.toJson()).toList(),
+    };
+  }
 }
 
 class ActivoFijo {
@@ -84,45 +107,72 @@ class ActivoFijo {
 
 class Visit {
   final int id;
-  final String tipoMantenimiento;
-  final DateTime fechaIngreso;
-  final String? observaciones;
-  final String status;
-  final DateTime fechaVisita;
+  final String? status;
+  final String? tipoMantenimiento;
+  final String? tipoServicioId;
+  final String? fechaVisita;
+  final String? observacion;
   final Local local;
   final Map<String, dynamic> client;
   final DateTime? fechaHoraInicioServicio;
-  final ActivoFijo? activoFijo;
+  final int? activo_fijo_id;
+  final bool clima;
 
   Visit({
     required this.id,
-    required this.tipoMantenimiento,
-    required this.fechaIngreso,
-    this.observaciones,
-    required this.status,
-    required this.fechaVisita,
+    this.status,
+    this.tipoMantenimiento,
+    this.tipoServicioId,
+    this.fechaVisita,
+    this.observacion,
     required this.local,
     required this.client,
     this.fechaHoraInicioServicio,
-    this.activoFijo,
+    this.activo_fijo_id,
+    this.clima = false,
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) {
     return Visit(
       id: json['id'] as int,
-      tipoMantenimiento: json['tipo_mantenimiento'] as String? ?? '',
-      fechaIngreso: DateTime.parse(json['fechaIngreso'] as String),
-      observaciones: json['observaciones'] as String?,
-      status: json['status'] as String? ?? 'pending',
-      fechaVisita: DateTime.parse(json['fechaVisita'] as String),
-      local: Local.fromJson(json['local'] as Map<String, dynamic>),
-      client: json['client'] as Map<String, dynamic>,
+      status: json['status'] as String?,
+      tipoMantenimiento: json['tipo_mantenimiento'] as String?,
+      tipoServicioId: json['tipoServicioId']?.toString(),
+      fechaVisita: json['fechaVisita'] as String?,
+      observacion: json['observacion'] as String?,
+      local: Local.fromJson(json['local']),
+      client: json['client'] as Map<String, dynamic>? ?? {},
       fechaHoraInicioServicio: json['fecha_hora_inicio_servicio'] != null
           ? DateTime.parse(json['fecha_hora_inicio_servicio'] as String)
           : null,
-      activoFijo: json['activo_fijo'] != null
-          ? ActivoFijo.fromJson(json['activo_fijo'])
-          : null,
+      activo_fijo_id: json['activo_fijo_id'] as int?,
+      clima: (json['client'] as Map<String, dynamic>?)?['clima'] == true,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'fecha': fechaVisita,
+      'estado': status,
+      'tipo': tipoMantenimiento,
+      'local': local.toJson(),
+      'tecnico': client,
+    };
+  }
+
+  // Método estático para obtener el nombre del tipo de servicio
+  static String getTipoServicioNombre(String? id) {
+    final Map<String, String> tiposServicio = {
+      '1': 'Reactivo',
+      '2': 'Prueba',
+      '3': 'Preventivo',
+      '4': 'Correctivo',
+      '5': 'Clima',
+      '6': 'Cortinas',
+      '7': 'Inversión',
+      '8': 'Siniestro',
+    };
+    return tiposServicio[id] ?? 'No especificado';
   }
 }

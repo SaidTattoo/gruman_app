@@ -47,22 +47,50 @@ class ChecklistItem {
   }
 }
 
+class Item {
+  final int id;
+  final String name;
+  final bool disabled;
+  final List<SubItem> subItems;
+
+  Item({
+    required this.id,
+    required this.name,
+    this.disabled = false,
+    required this.subItems,
+  });
+
+  factory Item.fromJson(Map<String, dynamic> json) {
+    return Item(
+      id: json['id'],
+      name: json['name'],
+      disabled: json['disabled'] ?? false,
+      subItems: (json['subItems'] as List)
+          .map((item) => SubItem.fromJson(item))
+          .toList(),
+    );
+  }
+}
+
 class SubItem {
   final int id;
   final String name;
+  final bool fotoObligatoria;
   final bool disabled;
 
   SubItem({
     required this.id,
     required this.name,
-    required this.disabled,
+    required this.fotoObligatoria,
+    this.disabled = false,
   });
 
   factory SubItem.fromJson(Map<String, dynamic> json) {
     return SubItem(
-      id: json['id'] as int,
-      name: json['name'] as String,
-      disabled: json['disabled'] as bool,
+      id: json['id'],
+      name: json['name'],
+      fotoObligatoria: json['foto_obligatoria'] ?? false,
+      disabled: json['disabled'] ?? false,
     );
   }
 }
