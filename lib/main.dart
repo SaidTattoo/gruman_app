@@ -4,6 +4,8 @@ import 'screens/splash_screen.dart';
 import 'widgets/connectivity_wrapper.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'DB/LocalDB.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'DB/solicitud_visita/solicitud_visita.dart';
 
 Future<void> initializeApp() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +22,18 @@ Future<void> initializeApp() async {
 }
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializar Hive
+  await Hive.initFlutter();
+
+  // Registrar adaptadores
+  Hive.registerAdapter(SolicitudVisitaAdapter());
+  Hive.registerAdapter(ActivoFijoLocalAdapter());
+
+  // Abrir las cajas que necesites
+  await Hive.openBox<SolicitudVisita>('solicitudes');
+
   try {
     await initializeApp();
 

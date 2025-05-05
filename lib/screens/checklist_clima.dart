@@ -67,7 +67,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
   Map<int, Map<int, bool>> subItemChecks = {};
   Map<int, Map<int, CheckState>> subItemStates =
       {}; // Nuevo mapa para los estados
-  Map<int, Map<int, RepuestoAsignado>> subItemRepuestos = {}; // activoFijoId -> subItemId -> RepuestoAsignado
+  Map<int, List<RepuestoAsignado>> subItemRepuestos = {};
   List<Repuesto>? repuestos; // Para almacenar la lista de repuestos disponibles
   Map<int, Map<int, List<ItemPhoto>>> subItemPhotos =
       {}; // activoFijoId -> subItemId -> photos
@@ -307,12 +307,15 @@ class _ChecklistClimaState extends State<ChecklistClima> {
 
           // Agregar al mapa de repuestos asignados
           if (subItemRepuestos[itemId] == null) {
-            subItemRepuestos[itemId] = {};
+            subItemRepuestos[itemId] = [];
           }
-          subItemRepuestos[itemId]![repuestoId] = RepuestoAsignado(
-            repuesto: repuestoData,
-            cantidad: cantidad,
-            comentario: comentario,
+
+          subItemRepuestos[itemId]!.add(
+            RepuestoAsignado(
+              repuesto: repuestoData,
+              cantidad: cantidad,
+              comentario: comentario,
+            ),
           );
         }
       });
@@ -366,49 +369,6 @@ class _ChecklistClimaState extends State<ChecklistClima> {
       });
     } catch (e) {
       print('Error cargando fotos guardadas: $e');
-    }
-  }
-
-  Future<void> _loadSavedRepuestos() async {
-    try {
-      final db = LocalDatabase();
-      final allRepuestos =
-          await db.getRepuestos(widget.visit.id); // Cambiar nombre del método
-
-      setState(() {
-        for (var repuesto in allRepuestos) {
-          final itemId = repuesto['itemId'] as int;
-          final activoFijoId = repuesto['activoFijoId'] as int;
-          final repuestoId = repuesto['repuestoId'] as int;
-
-          // Inicializar la estructura si no existe
-          if (subItemRepuestos[activoFijoId] == null) {
-            subItemRepuestos[activoFijoId] = {};
-          }
-          if (subItemRepuestos[activoFijoId]![itemId] == null) {
-            subItemRepuestos[activoFijoId]![itemId] = {};
-          }
-
-          subItemRepuestos[activoFijoId]![itemId]![repuestoId] =
-              RepuestoAsignado(
-            repuesto: Repuesto(
-              id: repuestoId,
-              articulo: repuesto['articulo'] as String,
-              familia: repuesto['familia'] as String,
-              marca: repuesto['marca'] as String,
-              codigoBarra: repuesto['codigoBarra'] as String,
-              precio_compra: double.parse(repuesto['precio_compra'].toString()),
-              precio_venta: double.parse(repuesto['precio_venta'].toString()),
-              valor_uf: double.parse(repuesto['valor_uf'].toString()),
-              clima: repuesto['clima'] as bool,
-            ),
-            cantidad: repuesto['cantidad'] as int,
-            comentario: repuesto['comentario'] as String?,
-          );
-        }
-      });
-    } catch (e) {
-      print('Error cargando repuestos guardados: $e');
     }
   }
 
@@ -557,6 +517,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
         );
 
         setState(() {
+          // Inicializar la estructura si no existe
           if (subItemPhotos[currentActivoFijoId!] == null) {
             subItemPhotos[currentActivoFijoId!] = {};
           }
@@ -564,16 +525,13 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             subItemPhotos[currentActivoFijoId!]![currentSubItemId!] = [];
           }
 
-          final photoData = kIsWeb ? bytes : photo.path;
           subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.add(
             ItemPhoto(
-              file: photoData,
+              file: bytes,
               timestamp: DateTime.now(),
-              isWeb: kIsWeb,
+              isWeb: true,
             ),
           );
-          print(
-              'Foto agregada al estado: ${subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.length} fotos totales');
         });
       } else {
         final File photoFile = File(photo.path);
@@ -596,16 +554,13 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             subItemPhotos[currentActivoFijoId!]![currentSubItemId!] = [];
           }
 
-          final photoData = kIsWeb ? bytes : photoFile;
           subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.add(
             ItemPhoto(
-              file: photoData,
+              file: photoFile,
               timestamp: DateTime.now(),
-              isWeb: kIsWeb,
+              isWeb: false,
             ),
           );
-          print(
-              'Foto agregada al estado: ${subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.length} fotos totales');
         });
       }
 
@@ -652,7 +607,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
     final hasPhotos =
         (subItemPhotos[activoId]?[subItem.id]?.isNotEmpty ?? false) ||
             (subItemPhotosUrls[subItem.id]?.isNotEmpty ?? false);
-    final hasRepuestos = _hasRepuestos(subItem.id, activoId);
+    final hasRepuestos = subItemRepuestos[subItem.id]?.isNotEmpty ?? false;
     final hasComments = subItemComments[subItem.id]?.isNotEmpty ?? false;
 
     return Container(
@@ -749,7 +704,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           // Mostrar contenido existente
           if (hasPhotos) _buildPhotosList(subItem.id, activoId),
           if (hasComments) _buildCommentView(subItem.id),
-          if (hasRepuestos) _buildRepuestosList(subItem.id, activoId),
+          if (hasRepuestos) _buildRepuestosList(subItem.id),
         ],
       ),
     );
@@ -854,25 +809,36 @@ class _ChecklistClimaState extends State<ChecklistClima> {
   }
 
   // Método auxiliar para mostrar la lista de repuestos
-  Widget _buildRepuestosList(int subItemId, int activoId) {
-    final repuestosMap = subItemRepuestos[activoId]?[subItemId] as Map<int, RepuestoAsignado>? ?? {};
-    final repuestosAsignados = repuestosMap.values.toList();
+  Widget _buildRepuestosList(int subItemId) {
+    final repuestosAsignados = subItemRepuestos[subItemId] ?? [];
 
     return Column(
-      children: repuestosAsignados.map((repuesto) {
-        return ListTile(
-          title: Text(repuesto.repuesto.articulo),
-          subtitle: Text('Cantidad: ${repuesto.cantidad}'),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete),
-            onPressed: () {
-              setState(() {
-                subItemRepuestos[activoId]![subItemId] = null;
-              });
-            },
-          ),
-        );
-      }).toList(),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: repuestosAsignados
+          .map((repuesto) => Container(
+                margin: const EdgeInsets.symmetric(vertical: 4.0),
+                padding: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                          '${repuesto.repuesto.articulo} (${repuesto.cantidad})'),
+                    ),
+                    if (repuesto.comentario?.isNotEmpty ?? false)
+                      Expanded(
+                        child: Text(
+                          repuesto.comentario!,
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                  ],
+                ),
+              ))
+          .toList(),
     );
   }
 
@@ -1544,7 +1510,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             // Obtener datos del checklist clima para este activo
             final checklistData =
                 await db.getChecklistClimaData(activo.id, widget.visit.id);
-            final repuestosActivo = subItemRepuestos[activo.id] ?? {};
+            final repuestosActivo = subItemRepuestos[activo.id] ?? [];
 
             return {
               'id': activo.id,
@@ -1557,17 +1523,19 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                 'tipo_equipo': activo.tipoEquipo,
                 'marca': activo.marca,
               },
-              'repuestos': repuestosActivo.values.map((repuesto) => {
-                'id': 1,
-                'cantidad': repuesto.cantidad,
-                'comentario': repuesto.comentario ?? '',
-                'estado': 'pendiente',
-                'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
-                'repuesto': {
-                  'id': repuesto.repuesto.id,
-                  'nombre': repuesto.repuesto.articulo,
-                }
-              }).toList(),
+              'repuestos': repuestosActivo
+                  .map((repuesto) => {
+                        'id': 1,
+                        'cantidad': repuesto.cantidad,
+                        'comentario': repuesto.comentario ?? '',
+                        'estado': 'pendiente',
+                        'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
+                        'repuesto': {
+                          'id': repuesto.repuesto.id,
+                          'nombre': repuesto.repuesto.articulo,
+                        }
+                      })
+                  .toList(),
               // Agregar datos del checklist clima
               'checklistClima': checklistData.isNotEmpty
                   ? {
@@ -1659,19 +1627,20 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             }
 
             // Agregar repuestos del subItem
-            if (subItemRepuestos[item.id]?[subItem.id] != null) {
-              final repuesto = subItemRepuestos[item.id]![subItem.id]!;
-              itemData['repuestos'].add({
-                'id': 1,
-                'cantidad': repuesto.cantidad,
-                'comentario': repuesto.comentario ?? '',
-                'estado': 'pendiente',
-                'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
-                'repuesto': {
-                  'id': repuesto.repuesto.id,
-                  'nombre': repuesto.repuesto.articulo,
-                }
-              });
+            if (subItemRepuestos[subItem.id]?.isNotEmpty ?? false) {
+              for (var repuesto in subItemRepuestos[subItem.id]!) {
+                itemData['repuestos'].add({
+                  'id': 1,
+                  'cantidad': repuesto.cantidad,
+                  'comentario': repuesto.comentario ?? '',
+                  'estado': 'pendiente',
+                  'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
+                  'repuesto': {
+                    'id': repuesto.repuesto.id,
+                    'nombre': repuesto.repuesto.articulo,
+                  }
+                });
+              }
             }
           }
 
@@ -1940,7 +1909,35 @@ class _ChecklistClimaState extends State<ChecklistClima> {
       return;
     }
 
-    final db = LocalDatabase();
+    final db = LocalDatabase(); // Instancia de la base de datos
+
+    // Cargar repuestos existentes de la DB
+    try {
+      final savedRepuestos = await db.getRepuestos(widget.visit.id);
+      setState(() {
+        for (var repuesto in savedRepuestos) {
+          final itemId = repuesto['itemId'] as int;
+          if (itemId == subItemId) {
+            if (subItemRepuestos[subItemId] == null) {
+              subItemRepuestos[subItemId] = [];
+            }
+            // Buscar el repuesto en la lista de repuestos disponibles
+            final repuestoData = repuestos!.firstWhere(
+              (r) => r.id == repuesto['repuestoId'].toString(),
+            );
+            subItemRepuestos[subItemId]!.add(
+              RepuestoAsignado(
+                repuesto: repuestoData,
+                cantidad: int.parse(repuesto['cantidad'].toString()),
+                comentario: repuesto['comentario'] as String,
+              ),
+            );
+          }
+        }
+      });
+    } catch (e) {
+      print('Error cargando repuestos guardados: $e');
+    }
 
     await showDialog(
       context: context,
@@ -1951,96 +1948,162 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             return SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: repuestos!.map((repuesto) {
-                  final isSelected = subItemRepuestos[currentActivoFijoId]?[subItemId]?.containsKey(int.parse(repuesto.id)) ?? false;
-                  final selectedRepuesto = isSelected 
-                    ? subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]
-                    : null;
+                children: [
+                  ...?repuestos?.map((repuesto) {
+                    final isSelected = subItemRepuestos[subItemId]
+                            ?.any((r) => r.repuesto.id == repuesto.id) ??
+                        false;
+                    final selectedRepuesto = isSelected
+                        ? subItemRepuestos[subItemId]!
+                            .firstWhere((r) => r.repuesto.id == repuesto.id)
+                        : null;
 
-                  return Column(
-                    children: [
-                      ListTile(
-                        title: Text(repuesto.articulo),
-                        subtitle: Text('Precio: \$${repuesto.precio_venta}'),
-                        trailing: isSelected
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove),
-                                  onPressed: () {
-                                    setState(() {
-                                      final currentRepuesto = subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]!;
-                                      if (currentRepuesto.cantidad > 1) {
-                                        currentRepuesto.cantidad--;
-                                        _updateRepuestoInDB(subItemId, currentRepuesto, db);
-                                      } else {
-                                        subItemRepuestos[currentActivoFijoId]![subItemId] = null;
-                                      }
-                                    });
-                                  },
-                                ),
-                                Text('${selectedRepuesto?.cantidad ?? 0}'),
-                                IconButton(
+                    return Column(
+                      children: [
+                        ListTile(
+                          title: Text(repuesto.articulo),
+                          subtitle: Text('Precio: \$${repuesto.precio_venta}'),
+                          trailing: isSelected
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove),
+                                      onPressed: () async {
+                                        setState(() {
+                                          final currentRepuesto =
+                                              subItemRepuestos[subItemId]!
+                                                  .firstWhere((r) =>
+                                                      r.repuesto.id ==
+                                                      repuesto.id);
+                                          if (currentRepuesto.cantidad > 1) {
+                                            currentRepuesto.cantidad--;
+                                            // Actualizar en DB
+                                            _updateRepuestoInDB(
+                                              subItemId,
+                                              currentRepuesto,
+                                              db,
+                                            );
+                                          } else {
+                                            subItemRepuestos[subItemId]!
+                                                .removeWhere((r) =>
+                                                    r.repuesto.id ==
+                                                    repuesto.id);
+                                            if (subItemRepuestos[subItemId]!
+                                                .isEmpty) {
+                                              subItemRepuestos
+                                                  .remove(subItemId);
+                                            }
+                                            // Eliminar de DB
+                                            /*   _deleteRepuestoFromDB(
+                                              subItemId,
+                                              repuesto.id,
+                                              db,
+                                            ); */
+                                          }
+                                        });
+                                        this.setState(() {});
+                                      },
+                                    ),
+                                    Text('${selectedRepuesto?.cantidad ?? 0}'),
+                                    IconButton(
+                                      icon: const Icon(Icons.add),
+                                      onPressed: () async {
+                                        setState(() {
+                                          final currentRepuesto =
+                                              subItemRepuestos[subItemId]!
+                                                  .firstWhere((r) =>
+                                                      r.repuesto.id ==
+                                                      repuesto.id);
+                                          currentRepuesto.cantidad++;
+                                        });
+                                        this.setState(() {});
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete),
+                                      onPressed: () async {
+                                        setState(() {
+                                          subItemRepuestos[subItemId]!
+                                              .removeWhere((r) =>
+                                                  r.repuesto.id == repuesto.id);
+                                          if (subItemRepuestos[subItemId]!
+                                              .isEmpty) {
+                                            subItemRepuestos.remove(subItemId);
+                                          }
+                                        });
+                                        // Eliminar de DB
+                                        /*    await _deleteRepuestoFromDB(
+                                          subItemId,
+                                          repuesto.id,
+                                          db,
+                                        ); */
+                                        this.setState(() {});
+                                      },
+                                    ),
+                                  ],
+                                )
+                              : IconButton(
                                   icon: const Icon(Icons.add),
-                                  onPressed: () {
+                                  onPressed: () async {
+                                    final newRepuesto =
+                                        RepuestoAsignado(repuesto: repuesto);
                                     setState(() {
-                                      final currentRepuesto = subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]!;
-                                      currentRepuesto.cantidad++;
+                                      if (subItemRepuestos[subItemId] == null) {
+                                        subItemRepuestos[subItemId] = [];
+                                      }
+                                      subItemRepuestos[subItemId]!
+                                          .add(newRepuesto);
                                     });
+                                    // Guardar en DB
+                                    await _saveRepuestoToDB(
+                                      subItemId,
+                                      newRepuesto,
+                                      db,
+                                    );
+                                    this.setState(() {});
                                   },
                                 ),
-                              ],
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.add),
-                              onPressed: () {
-                                final newRepuesto = RepuestoAsignado(
-                                  repuesto: repuesto,
-                                  cantidad: 1,
-                                );
-                                setState(() {
-                                  if (subItemRepuestos[currentActivoFijoId] == null) {
-                                    subItemRepuestos[currentActivoFijoId] = {};
-                                  }
-                                  subItemRepuestos[currentActivoFijoId]![subItemId] = newRepuesto;
-                                });
-                                _saveRepuestoToDB(subItemId, newRepuesto, db);
-                              },
-                            ),
                         ),
                         if (isSelected)
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 16.0),
                             child: TextField(
                               decoration: const InputDecoration(
                                 labelText: 'Comentario',
                                 border: OutlineInputBorder(),
                               ),
-                              onChanged: (value) {
+                              onChanged: (value) async {
                                 setState(() {
                                   selectedRepuesto!.comentario = value;
                                 });
-                                _updateRepuestoInDB(subItemId, selectedRepuesto!, db);
+                                // Actualizar comentario en DB
+                                await _updateRepuestoInDB(
+                                  subItemId,
+                                  selectedRepuesto!,
+                                  db,
+                                );
                               },
-                              controller: TextEditingController(text: selectedRepuesto?.comentario ?? ''),
+                              controller: TextEditingController(
+                                  text: selectedRepuesto?.comentario ?? ''),
                             ),
                           ),
                         const Divider(),
                       ],
                     );
-                  }).toList(),
-                ),
+                  }),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cerrar'),
-                ),
-              ],
-            ),
-          );
-        },
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }
@@ -2051,8 +2114,6 @@ class _ChecklistClimaState extends State<ChecklistClima> {
     RepuestoAsignado repuesto,
     LocalDatabase db,
   ) async {
-    if (currentActivoFijoId == null) return;
-
     try {
       await db.insertRepuesto(
         itemId,
@@ -2061,13 +2122,6 @@ class _ChecklistClimaState extends State<ChecklistClima> {
         widget.visit.id,
         activoFijoId: currentActivoFijoId,
       );
-
-      setState(() {
-        if (subItemRepuestos[currentActivoFijoId!] == null) {
-          subItemRepuestos[currentActivoFijoId!] = {};
-        }
-        subItemRepuestos[currentActivoFijoId!]![itemId] = repuesto;
-      });
     } catch (e) {
       print('Error guardando repuesto en DB: $e');
     }
@@ -2195,9 +2249,5 @@ class _ChecklistClimaState extends State<ChecklistClima> {
     } catch (e) {
       print('Error cargando datos del checklist: $e');
     }
-  }
-
-  bool _hasRepuestos(int subItemId, int activoId) {
-    return (subItemRepuestos[activoId]?[subItemId]?.isNotEmpty ?? false);
   }
 }
