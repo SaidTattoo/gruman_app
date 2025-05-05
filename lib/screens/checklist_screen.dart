@@ -15,6 +15,9 @@ import '../services/api_service.dart';
 import 'package:http_parser/http_parser.dart';
 import 'visit_detail_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../DB/LocalDB.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import '../models/checklist_model.dart';
 
 class ChecklistScreen extends StatefulWidget {
   final Visit visit;
@@ -71,7 +74,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
       {}; // Nuevo mapa para los estados
   Map<int, List<RepuestoAsignado>> subItemRepuestos = {};
   List<Repuesto>? repuestos; // Para almacenar la lista de repuestos disponibles
-  Map<int, List<ItemPhoto>> subItemPhotos = {};
+  Map<int, List<String>> subItemPhotos = {}; // Solo almacena paths o base64
   final ImagePicker _picker = ImagePicker();
   Map<int, String> subItemComments = {}; // Nuevo mapa para comentarios
   Uint8List? clientSignature;
@@ -83,6 +86,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   void initState() {
     super.initState();
     _loadRepuestos();
+    _loadLocalData();
     // Inicializar para cada lista y sus items
     for (var lista in widget.listasInspeccion) {
       sectionChecks[lista.id] = false;
@@ -103,13 +107,195 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
 
   Future<void> _loadRepuestos() async {
     try {
-      final data = await _apiService.get('repuestos');
+      final response = await LocalDatabase().listadoRepuestos();
+      print('Respuesta de repuestos raw: $response');
+
+      if (response.isEmpty) {
+        print('No hay repuestos en la base de datos local');
+        return;
+      }
+
       setState(() {
-        repuestos =
-            (data as List).map((item) => Repuesto.fromJson(item)).toList();
+        repuestos = response.map((item) {
+          try {
+            return Repuesto(
+                id: item['id'] as int,
+                articulo: item['articulo'] as String,
+                familia: item['familia'] as String,
+                marca: item['marca'] as String,
+                codigoBarra: item['codigoBarra'] as String,
+                precio_compra: (item['precio_compra'] as num).toDouble(),
+                precio_venta: (item['precio_venta'] as num).toDouble(),
+                valor_uf: (item['valor_uf'] as num).toDouble(),
+                clima: item['clima'] == 1);
+          } catch (e) {
+            print('Error convirtiendo repuesto: $e');
+            print('Datos del repuesto: $item');
+            rethrow;
+          }
+        }).toList();
+
+        print('Repuestos cargados exitosamente: ${repuestos?.length}');
       });
     } catch (e) {
       print('Error cargando repuestos: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Error cargando repuestos. Por favor, intente de nuevo.'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Reintentar',
+              textColor: Colors.white,
+              onPressed: () => _loadRepuestos(),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadLocalData() async {
+    try {
+      final db = LocalDatabase();
+
+      // Primero, obtener todos los estados guardados para esta visita
+      final allEstados = await db.getEstados(
+        'item_estado',
+        where: 'solicitarVisitaId = ?',
+        whereArgs: [widget.visit.id],
+      );
+
+      print('Estados encontrados en DB local: ${allEstados.length}');
+
+      // Cargar estados
+      for (var lista in widget.listasInspeccion) {
+        if (!subItemStates.containsKey(lista.id)) {
+          subItemStates[lista.id] = {};
+        }
+        if (!subItemChecks.containsKey(lista.id)) {
+          subItemChecks[lista.id] = {};
+        }
+
+        for (var item in lista.items) {
+          for (var subItem in item.subItems) {
+            // Buscar el estado para este subItem
+            final estadoItem = allEstados.firstWhere(
+              (estado) => estado['itemId'].toString() == subItem.id.toString(),
+              orElse: () => {},
+            );
+
+            if (estadoItem.isNotEmpty) {
+              print(
+                  'Encontrado estado para subItem ${subItem.id}: ${estadoItem['estado']}');
+
+              setState(() {
+                // Marcar el checkbox como checked
+                subItemChecks[lista.id]![subItem.id] = true;
+
+                // Establecer el estado
+                subItemStates[lista.id]![subItem.id] =
+                    _getCheckStateFromString(estadoItem['estado'] as String);
+
+                // Guardar comentario si existe
+                if (estadoItem['comentario'] != null &&
+                    estadoItem['comentario'].toString().isNotEmpty) {
+                  subItemComments[subItem.id] =
+                      estadoItem['comentario'] as String;
+                }
+              });
+            } else {
+              print('No se encontró estado para subItem ${subItem.id}');
+            }
+          }
+        }
+      }
+
+      // Cargar fotos
+      final allFotos = await db.getFotosItem(
+        'item_fotos',
+        where: 'solicitarVisitaId = ?',
+        whereArgs: [widget.visit.id],
+      );
+
+      for (var foto in allFotos) {
+        final subItemId = int.parse(foto['itemId'].toString());
+        final fotoBase64 = foto['fotos'] as String;
+
+        setState(() {
+          if (subItemPhotos[subItemId] == null) {
+            subItemPhotos[subItemId] = [];
+          }
+          subItemPhotos[subItemId]!.add(fotoBase64);
+        });
+      }
+
+      // Cargar repuestos
+      final allRepuestos = await db.getRepuestos(widget.visit.id);
+
+      for (var repuesto in allRepuestos) {
+        final subItemId = int.parse(repuesto['itemId'].toString());
+        final repuestoId = int.parse(repuesto['repuestoId'].toString());
+
+        final repuestoEncontrado = this.repuestos?.firstWhere(
+              (r) => r.id == repuestoId,
+              orElse: () => Repuesto(
+                id: -1,
+                articulo: '',
+                familia: '',
+                marca: '',
+                codigoBarra: '',
+                precio_compra: 0,
+                precio_venta: 0,
+                valor_uf: 0,
+                clima: false,
+              ),
+            );
+
+        if (repuestoEncontrado != null) {
+          setState(() {
+            if (!subItemRepuestos.containsKey(subItemId)) {
+              subItemRepuestos[subItemId] = [];
+            }
+
+            subItemRepuestos[subItemId]!.add(
+              RepuestoAsignado(
+                repuesto: repuestoEncontrado,
+                cantidad: int.parse(repuesto['cantidad'].toString()),
+                comentario: repuesto['comentario'] as String?,
+              ),
+            );
+          });
+        }
+      }
+
+      print('Datos locales cargados exitosamente');
+      // Imprimir estado final para debugging
+      subItemStates.forEach((listaId, estados) {
+        estados.forEach((subItemId, estado) {
+          print(
+              'Lista: $listaId, SubItem: $subItemId, Estado: $estado, Checked: ${subItemChecks[listaId]![subItemId]}');
+        });
+      });
+    } catch (e, stackTrace) {
+      print('Error cargando datos locales: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
+  // Método auxiliar mejorado para convertir string a CheckState
+  CheckState _getCheckStateFromString(String estado) {
+    switch (estado.toLowerCase()) {
+      case 'conforme':
+        return CheckState.conforme;
+      case 'no_conforme':
+        return CheckState.noConforme;
+      case 'no_aplica':
+        return CheckState.noAplica;
+      default:
+        print('Estado no reconocido: $estado, usando conforme por defecto');
+        return CheckState.conforme;
     }
   }
 
@@ -117,6 +303,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   void _showStateSelector(
       BuildContext context, InspeccionList lista, SubItem subItem) {
     CheckState selectedState = subItemStates[lista.id]![subItem.id]!;
+    final db = LocalDatabase();
 
     showDialog(
       context: context,
@@ -186,12 +373,22 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               this.setState(() {
                 subItemStates[lista.id]![subItem.id] = selectedState;
-                if (selectedState == CheckState.noConforme) {
-                  // Mostrar recordatorio para agregar foto
-                  Future.delayed(const Duration(milliseconds: 500), () {
+              });
+
+              // Actualizar el estado en la base de datos local
+              await db.changeEstado(
+                subItem.id,
+                _getEstadoString(selectedState),
+                widget.visit.id,
+              );
+
+              if (selectedState == CheckState.noConforme) {
+                // Mostrar recordatorio para agregar foto
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -199,9 +396,9 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                         backgroundColor: Colors.orange,
                       ),
                     );
-                  });
-                }
-              });
+                  }
+                });
+              }
               Navigator.pop(context);
             },
             style: FilledButton.styleFrom(
@@ -280,11 +477,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
         setState(() {
           subItemPhotos[subItemId] = [
             ...(subItemPhotos[subItemId] ?? []),
-            ItemPhoto(
-              file: image.path,
-              timestamp: DateTime.now(),
-              isWeb: false,
-            ),
+            image.path,
           ];
         });
       }
@@ -304,66 +497,42 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     try {
       final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
       if (photo != null) {
-        _showLoadingDialog('Subiendo foto...');
+        _showLoadingDialog('Procesando foto...');
 
         try {
-          if (kIsWeb) {
-            final bytes = await photo.readAsBytes();
-            String photoUrl = await _uploadPhoto(
-                bytes, widget.visit.id, subItemId, photo.name);
+          final bytes = await photo.readAsBytes();
+          final compressedBytes = await FlutterImageCompress.compressWithList(
+            bytes,
+            minHeight: 1024,
+            minWidth: 1024,
+            quality: 70,
+          );
+          final base64Image = base64Encode(compressedBytes);
 
-            setState(() {
-              if (subItemPhotos[subItemId] == null) {
-                subItemPhotos[subItemId] = [];
-              }
-              subItemPhotos[subItemId]!.add(
-                ItemPhoto(
-                  file: bytes,
-                  timestamp: DateTime.now(),
-                  isWeb: true,
-                ),
-              );
-            });
-          } else {
-            // Para móvil, guardamos una copia del archivo
-            final File photoFile = File(photo.path);
-            String photoUrl = await _uploadPhoto(
-                photoFile.path, widget.visit.id, subItemId, photo.name);
+          // Guardar en DB local
+          final db = LocalDatabase();
+          await db.subirFoto(subItemId, base64Image, widget.visit.id);
 
-            setState(() {
-              if (subItemPhotos[subItemId] == null) {
-                subItemPhotos[subItemId] = [];
-              }
-              subItemPhotos[subItemId]!.add(
-                ItemPhoto(
-                  file: photoFile, // Guardamos el File completo
-                  timestamp: DateTime.now(),
-                  isWeb: false,
-                ),
-              );
-            });
-          }
+          setState(() {
+            if (subItemPhotos[subItemId] == null) {
+              subItemPhotos[subItemId] = [];
+            }
+            subItemPhotos[subItemId]!.add(base64Image);
+          });
 
           Navigator.of(context, rootNavigator: true).pop();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Foto subida exitosamente'),
-              backgroundColor: Colors.green,
-            ),
+            const SnackBar(content: Text('Foto guardada correctamente')),
           );
         } catch (e) {
           Navigator.of(context, rootNavigator: true).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al subir la foto: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          throw e;
         }
       }
     } catch (e) {
+      print('Error procesando foto: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al tomar la foto: $e')),
+        SnackBar(content: Text('Error al procesar la foto: $e')),
       );
     }
   }
@@ -388,6 +557,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
 
   // Modificar el CheckboxListTile
   Widget _buildChecklistItem(InspeccionList lista, SubItem subItem) {
+    final db = LocalDatabase();
     final isChecked = subItemChecks[lista.id]?[subItem.id] ?? false;
     final state = subItemStates[lista.id]?[subItem.id] ?? CheckState.conforme;
     final repuestosAsignados = subItemRepuestos[subItem.id] ?? [];
@@ -402,7 +572,8 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             style: const TextStyle(fontSize: 14),
           ),
           value: isChecked,
-          onChanged: (bool? value) {
+          onChanged: (bool? value) async {
+            final db = LocalDatabase();
             setState(() {
               if (subItemChecks[lista.id] == null) {
                 subItemChecks[lista.id] = {};
@@ -412,6 +583,20 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
               }
               subItemChecks[lista.id]![subItem.id] = value ?? false;
             });
+
+            // Guardar en DB local
+            try {
+              await db.itemEstado(
+                subItem.itemId,
+                _getStateText(state),
+                widget.visit.id,
+                '', // comentario vacío inicial
+              );
+              print(
+                  'Estado guardado: ItemID: ${subItem.itemId}, Estado: ${_getStateText(state)}');
+            } catch (e) {
+              print('Error guardando estado: $e');
+            }
           },
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: const EdgeInsets.symmetric(
@@ -425,51 +610,65 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                // Estado
+                TextButton.icon(
+                  onPressed: () => _showStateSelector(context, lista, subItem),
+                  icon: Icon(
+                    Icons.check_circle,
+                    color: _getStateColor(state),
+                  ),
+                  label: Text(
+                    _getStateText(state),
+                    style: TextStyle(
+                      color: _getStateColor(state),
+                    ),
+                  ),
+                ),
+
+                // Botones en columna
+                Column(
                   children: [
-                    TextButton.icon(
-                      onPressed: () =>
-                          _showStateSelector(context, lista, subItem),
-                      icon: Icon(
-                        Icons.check_circle,
-                        color: _getStateColor(state),
-                      ),
-                      label: Text(
-                        _getStateText(state),
-                        style: TextStyle(
-                          color: _getStateColor(state),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () => _showPhotoOptions(subItem.id),
+                        icon: const Icon(Icons.photo_camera),
+                        label: const Text('Agregar Foto'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF3F3FFF),
+                          alignment: Alignment.centerLeft,
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => _showPhotoOptions(subItem.id),
-                      icon: const Icon(Icons.photo_camera),
-                      label: const Text('Agregar Foto'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => _showCommentDialog(subItem.id),
-                      icon: const Icon(Icons.comment),
-                      label: const Text('Comentario'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    if ((state == CheckState.noConforme ||
-                        state == CheckState.conforme))
-                      TextButton.icon(
-                        onPressed: () => _showRepuestosDialog(subItem.id),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Repuesto'),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () => _showCommentDialog(subItem.id),
+                        icon: const Icon(Icons.comment),
+                        label: const Text('Comentario'),
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF3F3FFF),
+                          alignment: Alignment.centerLeft,
+                        ),
+                      ),
+                    ),
+                    if (state == CheckState.noConforme ||
+                        state == CheckState.conforme)
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          onPressed: () => _showRepuestosDialog(subItem.id),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Repuesto'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF3F3FFF),
+                            alignment: Alignment.centerLeft,
+                          ),
                         ),
                       ),
                   ],
                 ),
+
                 // Mostrar comentario si existe
                 if (comment.isNotEmpty)
                   Container(
@@ -497,6 +696,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                       ],
                     ),
                   ),
+
                 // Mostrar fotos en grid
                 if (photos.isNotEmpty)
                   Container(
@@ -510,6 +710,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                       }).toList(),
                     ),
                   ),
+
                 // Lista de repuestos
                 if (repuestosAsignados.isNotEmpty)
                   Container(
@@ -520,8 +721,8 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                     ),
                     child: Column(
                       children: repuestosAsignados
-                          .map((repuestoAsignado) =>
-                              _buildRepuestoItem(repuestoAsignado, subItem.id))
+                          .map((repuesto) =>
+                              _buildRepuestoItem(repuesto, subItem.id))
                           .toList(),
                     ),
                   ),
@@ -533,7 +734,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     );
   }
 
-  Widget _buildPhotoThumbnail(ItemPhoto photo, {required int subItemId}) {
+  Widget _buildPhotoThumbnail(String base64Image, {required int subItemId}) {
     return Stack(
       children: [
         Container(
@@ -546,15 +747,10 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: photo.isWeb
-                ? Image.memory(
-                    photo.file as Uint8List,
-                    fit: BoxFit.cover,
-                  )
-                : Image.file(
-                    photo.file as File,
-                    fit: BoxFit.cover,
-                  ),
+            child: Image.memory(
+              base64Decode(base64Image),
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         Positioned(
@@ -564,7 +760,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             icon: const Icon(Icons.close, size: 20),
             onPressed: () {
               setState(() {
-                subItemPhotos[subItemId]?.remove(photo);
+                subItemPhotos[subItemId]?.remove(base64Image);
               });
             },
           ),
@@ -576,11 +772,11 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   String _getStateText(CheckState state) {
     switch (state) {
       case CheckState.conforme:
-        return 'Conforme';
+        return 'conforme';
       case CheckState.noConforme:
-        return 'No Conforme';
+        return 'no_conforme';
       case CheckState.noAplica:
-        return 'No Aplica';
+        return 'no_aplica';
     }
   }
 
@@ -596,34 +792,24 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   }
 
   void _showRepuestosDialog(int subItemId) {
-    String searchQuery = ''; // Para el filtro de búsqueda
-    List<Repuesto> filteredRepuestos = repuestos ?? []; // Lista filtrada
+    if (repuestos == null) {
+      _loadRepuestos();
+    }
+
+    String searchQuery = '';
+    List<Repuesto> filteredRepuestos = repuestos ?? [];
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Agregar Repuestos'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              // Filtrar repuestos basado en la búsqueda
-              filteredRepuestos = (repuestos ?? []).where((repuesto) {
-                return repuesto.articulo
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase()) ||
-                    repuesto.familia
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase()) ||
-                    repuesto.marca
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase());
-              }).toList();
-
-              return Column(
+        content: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return SizedBox(
+              width: double.maxFinite,
+              height: 400,
+              child: Column(
                 children: [
-                  // Campo de búsqueda
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8.0),
                     child: TextField(
@@ -635,13 +821,24 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                             EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
                       onChanged: (value) {
-                        setState(() {
+                        setDialogState(() {
                           searchQuery = value;
+                          filteredRepuestos =
+                              (repuestos ?? []).where((repuesto) {
+                            return repuesto.articulo
+                                    .toLowerCase()
+                                    .contains(searchQuery.toLowerCase()) ||
+                                repuesto.familia
+                                    .toLowerCase()
+                                    .contains(searchQuery.toLowerCase()) ||
+                                repuesto.marca
+                                    .toLowerCase()
+                                    .contains(searchQuery.toLowerCase());
+                          }).toList();
                         });
                       },
                     ),
                   ),
-                  // Lista de repuestos filtrada
                   Expanded(
                     child: ListView.builder(
                       itemCount: filteredRepuestos.length,
@@ -651,51 +848,23 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                           title: Text(repuesto.articulo),
                           subtitle:
                               Text('${repuesto.familia} - ${repuesto.marca}'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.add),
-                            onPressed: () {
-                              this.setState(() {
-                                if (subItemRepuestos[subItemId] == null) {
-                                  subItemRepuestos[subItemId] = [];
-                                }
-
-                                subItemRepuestos[subItemId]!.add(
-                                  RepuestoAsignado(
-                                    repuesto: repuesto,
-                                    comentario: '',
-                                  ),
-                                );
-
-                                print('Repuesto agregado:');
-                                print('SubItem ID: $subItemId');
-                                print('Repuesto: ${repuesto.articulo}');
-                                print('Cantidad: 1');
-                                print(
-                                    'Total repuestos en este item: ${subItemRepuestos[subItemId]!.length}');
-                              });
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Repuesto ${repuesto.articulo} agregado'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            },
-                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _addRepuesto(subItemId, repuesto);
+                          },
                         );
                       },
                     ),
                   ),
                 ],
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+            child: const Text('Cancelar'),
           ),
         ],
       ),
@@ -722,12 +891,28 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             icon: const Icon(Icons.remove_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                if (repuestoAsignado.cantidad > 1) {
-                  repuestoAsignado.cantidad--;
+            onPressed: () async {
+              if (repuestoAsignado.cantidad > 1) {
+                try {
+                  final nuevaCantidad = repuestoAsignado.cantidad - 1;
+                  await LocalDatabase().actualizarCantidadRepuesto(
+                    subItemId,
+                    repuestoAsignado.repuesto.id,
+                    widget.visit.id,
+                    nuevaCantidad,
+                  );
+                  setState(() {
+                    repuestoAsignado.cantidad = nuevaCantidad;
+                  });
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al actualizar cantidad: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
-              });
+              }
             },
           ),
           Text('${repuestoAsignado.cantidad}'),
@@ -735,10 +920,26 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             icon: const Icon(Icons.add_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                repuestoAsignado.cantidad++;
-              });
+            onPressed: () async {
+              try {
+                final nuevaCantidad = repuestoAsignado.cantidad + 1;
+                await LocalDatabase().actualizarCantidadRepuesto(
+                  subItemId,
+                  repuestoAsignado.repuesto.id,
+                  widget.visit.id,
+                  nuevaCantidad,
+                );
+                setState(() {
+                  repuestoAsignado.cantidad++;
+                });
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error al actualizar cantidad: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             },
           ),
           IconButton(
@@ -761,6 +962,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     final TextEditingController commentController = TextEditingController(
       text: subItemComments[subItemId] ?? '',
     );
+    final db = LocalDatabase();
 
     showDialog(
       context: context,
@@ -780,16 +982,39 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
+              final comment = commentController.text.trim();
+
+              // Actualizar el estado local
               setState(() {
-                final comment = commentController.text.trim();
                 if (comment.isEmpty) {
                   subItemComments.remove(subItemId);
                 } else {
                   subItemComments[subItemId] = comment;
                 }
               });
-              Navigator.pop(context);
+
+              // Actualizar la base de datos local
+              try {
+                await db.updateComentario(subItemId, comment);
+                print(
+                    'Comentario actualizado en DB local para subItemId: $subItemId');
+              } catch (e) {
+                print('Error actualizando comentario en DB local: $e');
+                // Opcional: Mostrar mensaje de error al usuario
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error guardando comentario: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+
+              if (mounted) {
+                Navigator.pop(context);
+              }
             },
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF3F3FFF),
@@ -853,15 +1078,10 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Text(
-                                        item.name,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
+                                    ListTile(
+                                      title: Text(item.name),
+                                      trailing: _buildChangeStateButton(
+                                          item, lista.id),
                                     ),
                                     const Divider(height: 1),
                                     ListView.builder(
@@ -1007,11 +1227,11 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Total de items: ${_getTotalSubItems()}',
+                        'Total de items: ${_getTotalItemsCount(widget.listasInspeccion[0].id)}',
                         style: const TextStyle(fontSize: 16),
                       ),
                       Text(
-                        'Completados: ${_getCompletedSubItems()}',
+                        'Completados: ${_getCompletedItemsCount(widget.listasInspeccion[0].id)}',
                         style: const TextStyle(fontSize: 16),
                       ),
                     ],
@@ -1020,34 +1240,38 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _canFinish()
-                          ? () async {
-                              final signature = await Navigator.push<String>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const SignatureScreen(),
-                                ),
-                              );
+                      onPressed: () async {
+                        print('Botón presionado');
+                        try {
+                          final signature = await Navigator.push<String>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SignatureScreen(),
+                            ),
+                          );
 
-                              if (signature != null) {
-                                await _finalizarVisita(signature);
-                              }
-                            }
-                          : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content:
-                                      Text(_getMissingRequirementsMessage()),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            },
+                          if (signature != null) {
+                            // Remover el prefijo de data URL
+                            final base64String = signature.split(',')[1];
+                            setState(() {
+                              clientSignature = base64Decode(base64String);
+                            });
+                            await _finalizarVisita();
+                          }
+                        } catch (e) {
+                          print('Error en botón de finalizar: $e');
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
+                        backgroundColor: const Color(0xFF3F3FFF),
                         foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      child: const Text('Finalizar Inspección'),
+                      child: const Text(
+                        'Finalizar Visita',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                 ],
@@ -1059,57 +1283,44 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     );
   }
 
-  int _getTotalSubItems() {
-    int total = 0;
-    for (var lista in widget.listasInspeccion) {
-      for (var item in lista.items) {
-        total += item.subItems.length;
-      }
-    }
-    return total;
+  int _getTotalItemsCount(int listaId) {
+    return widget.listasInspeccion
+        .firstWhere((l) => l.id == listaId)
+        .items
+        .fold(0, (sum, item) => sum + item.subItems.length);
   }
 
-  int _getCompletedSubItems() {
+  int _getCompletedItemsCount(int listaId) {
     int completed = 0;
-    for (var lista in widget.listasInspeccion) {
-      for (var item in lista.items) {
-        for (var subItem in item.subItems) {
-          if (subItemChecks[lista.id]?[subItem.id] == true) {
-            completed++;
-          }
+    for (var item
+        in widget.listasInspeccion.firstWhere((l) => l.id == listaId).items) {
+      for (var subItem in item.subItems) {
+        if (subItemChecks[listaId]?[subItem.id] == true) {
+          completed++;
         }
       }
     }
     return completed;
   }
 
-  bool _canFinish() {
-    bool allItemsComplete = _getTotalSubItems() == _getCompletedSubItems();
-    bool allNoConformeHavePhotos = true;
-
-    // Verificar que todos los items no conformes tengan al menos una foto
+  bool _areAllItemsChecked() {
     for (var lista in widget.listasInspeccion) {
       for (var item in lista.items) {
         for (var subItem in item.subItems) {
-          final state = subItemStates[lista.id]?[subItem.id];
-          if (state == CheckState.noConforme) {
-            final hasPhotos = (subItemPhotos[subItem.id]?.isNotEmpty ?? false);
-            if (!hasPhotos) {
-              allNoConformeHavePhotos = false;
-              break;
-            }
+          if (subItemChecks[lista.id]?[subItem.id] != true) {
+            return false;
           }
         }
       }
     }
-
-    return allItemsComplete && allNoConformeHavePhotos;
+    return true;
   }
 
   String _getMissingRequirementsMessage() {
     List<String> missing = [];
 
-    if (_getTotalSubItems() != _getCompletedSubItems()) {
+    if (_getTotalItemsCount(widget.listasInspeccion[0].id) !=
+        _getCompletedItemsCount(widget.listasInspeccion[0].id)) {
       missing.add('Hay items sin completar');
     }
 
@@ -1140,217 +1351,175 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
   Future<String> _uploadPhoto(
       dynamic file, int visitId, int subItemId, String name) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final db = LocalDatabase();
 
-      var uri = Uri.parse(
-          '${ApiService.baseUrl}/upload/solicitudes/$visitId/$subItemId');
-      var request = http.MultipartRequest('POST', uri);
-
-      request.headers.addAll({
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      });
-
+      // Comprimir y convertir a base64
+      String base64Image = '';
       if (kIsWeb) {
-        var multipartFile = http.MultipartFile.fromBytes(
-          'file',
-          file as Uint8List,
-          filename: name,
-          contentType: MediaType('image', 'jpeg'),
-        );
-        request.files.add(multipartFile);
-      } else {
-        var multipartFile = await http.MultipartFile.fromPath(
-          'file',
-          file as String,
-          contentType: MediaType('image', 'jpeg'),
-        );
-        request.files.add(multipartFile);
-      }
-
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        var jsonResponse = json.decode(response.body);
-        String photoUrl = jsonResponse['url'] ?? '';
-
-        if (photoUrl.isNotEmpty) {
-          // Convertir URL relativa a absoluta si es necesario
-          if (photoUrl.startsWith('/')) {
-            photoUrl = '${ApiService.baseUrl}$photoUrl';
-          } else if (photoUrl.startsWith('http://localhost')) {
-            // Reemplazar localhost con la URL base
-            photoUrl = photoUrl.replaceFirst(
-                'http://localhost:3000', ApiService.baseUrl);
-          }
-
-          if (!subItemPhotosUrls.containsKey(subItemId)) {
-            subItemPhotosUrls[subItemId] = [];
-          }
-          subItemPhotosUrls[subItemId]!.add(photoUrl);
-          print('URL guardada para subItem $subItemId: $photoUrl');
-          return photoUrl;
-        } else {
-          throw Exception('URL de foto no encontrada en la respuesta');
+        // Para web, el archivo ya viene como Uint8List
+        final bytes = file as Uint8List;
+        try {
+          final compressedBytes = await FlutterImageCompress.compressWithList(
+            bytes,
+            minHeight: 1024,
+            minWidth: 1024,
+            quality: 70,
+          );
+          base64Image = base64Encode(compressedBytes);
+        } catch (e) {
+          print('Error comprimiendo imagen web: $e');
+          // Si falla la compresión, usar la imagen original
+          base64Image = base64Encode(bytes);
         }
       } else {
-        throw Exception('Error al subir la foto: ${response.statusCode}');
+        // Para móvil, tenemos la ruta del archivo
+        try {
+          final bytes = await File(file as String).readAsBytes();
+          final compressedBytes = await FlutterImageCompress.compressWithList(
+            bytes,
+            minHeight: 1024,
+            minWidth: 1024,
+            quality: 70,
+          );
+          base64Image = base64Encode(compressedBytes);
+        } catch (e) {
+          print('Error comprimiendo imagen móvil: $e');
+          // Si falla la compresión, usar la imagen original
+          final bytes = await File(file as String).readAsBytes();
+          base64Image = base64Encode(bytes);
+        }
       }
+
+      // Guardar en la base de datos local
+      await db.subirFoto(subItemId, base64Image, visitId);
+
+      // Generar una URL temporal local para la UI
+      String localPhotoId = DateTime.now().millisecondsSinceEpoch.toString();
+      String tempUrl = 'local://$localPhotoId';
+
+      // Actualizar el estado de la UI
+      if (!subItemPhotosUrls.containsKey(subItemId)) {
+        subItemPhotosUrls[subItemId] = [];
+      }
+      subItemPhotosUrls[subItemId]!.add(tempUrl);
+
+      print('Foto guardada localmente para subItem $subItemId');
+      return tempUrl;
     } catch (e) {
-      print('Error al subir la foto: $e');
+      print('Error al guardar la foto localmente: $e');
       throw e;
     }
   }
 
-  Future<void> _finalizarVisita(String signature) async {
+  Future<void> _finalizarVisita() async {
     try {
-      Map<String, dynamic> payload = {
-        'firma_cliente': signature,
-        'repuestos': <String, dynamic>{},
-        'activoFijoRepuestos':
-            widget.visit.local.activoFijoLocales.map((activo) {
-          final repuestosActivo = subItemRepuestos[activo.id] ?? [];
-          return {
-            'id': activo.id,
-            'estadoOperativo': activoFijoEstados[activo.id] ?? 'funcionando',
-            'observacionesEstado': '',
-            'fechaRevision': DateTime.now().toIso8601String(),
-            'activoFijoId': activo.id,
-            'activoFijo': {
-              'id': activo.id,
-              'tipo_equipo': activo.tipoEquipo,
-              'marca': activo.marca,
-            },
-            'repuestos': repuestosActivo
-                .map((repuesto) => {
-                      'id': 1,
-                      'cantidad': repuesto.cantidad,
-                      'comentario': repuesto.comentario ?? '',
-                      'estado': 'pendiente',
-                      'precio_unitario': repuesto.repuesto.precio ?? 0,
-                      'repuesto': {
-                        'id': repuesto.repuesto.id,
-                        'nombre': repuesto.repuesto.articulo,
-                      }
-                    })
-                .toList()
-          };
-        }).toList()
-      };
+      final db = LocalDatabase();
 
-      // Agregar los items de inspección y sus repuestos
-      for (var lista in widget.listasInspeccion) {
-        for (var item in lista.items) {
-          // Crear un mapa para almacenar todos los repuestos del item
-          Map<String, dynamic> itemData = {
-            'id': item.id,
-            'estado': 'conforme',
-            'comentario': '',
-            'fotos': [],
-            'repuestos': <Map<String, dynamic>>[]
-          };
+      if (clientSignature == null) {
+        throw Exception('Se requiere la firma del cliente');
+      }
 
-          // Agregar los repuestos de todos los subItems al item padre
-          for (var subItem in item.subItems) {
-            String estado = _getEstadoString(
-                subItemStates[lista.id]?[subItem.id] ?? CheckState.conforme);
+      // Convertir firma a base64
+      final firmaCliente = base64Encode(clientSignature!);
 
-            // Agregar fotos del subItem
-            if (subItemPhotosUrls[subItem.id]?.isNotEmpty ?? false) {
-              itemData['fotos'].addAll(subItemPhotosUrls[subItem.id] ?? []);
-            }
+      // Obtener datos de la base de datos local
+      final estados = await db.getEstados(
+        'item_estado',
+        where: 'solicitarVisitaId = ?',
+        whereArgs: [widget.visit.id],
+      );
 
-            // Agregar comentario si existe
-            if (subItemComments[subItem.id]?.isNotEmpty ?? false) {
-              itemData['comentario'] = subItemComments[subItem.id];
-            }
+      final fotos = await db.getFotosItem(
+        'item_fotos',
+        where: 'solicitarVisitaId = ?',
+        whereArgs: [widget.visit.id],
+      );
 
-            // Si el estado no es conforme, actualizar el estado del item
-            if (estado != 'conforme') {
-              itemData['estado'] = estado;
-            }
+      final repuestos = await db.getRepuestos(widget.visit.id);
 
-            // Agregar repuestos del subItem
-            if (subItemRepuestos[subItem.id]?.isNotEmpty ?? false) {
-              for (var repuesto in subItemRepuestos[subItem.id]!) {
-                itemData['repuestos'].add({
-                  'id': 1,
-                  'cantidad': repuesto.cantidad,
-                  'comentario': repuesto.comentario ?? '',
-                  'estado': 'pendiente',
-                  'precio_unitario': repuesto.repuesto.precio ?? 0,
-                  'repuesto': {
-                    'id': repuesto.repuesto.id,
-                    'nombre': repuesto.repuesto.articulo,
-                  }
+      // Armar el payload
+      final Map<int, Map<String, dynamic>> itemsData = {};
+
+      // Procesar estados
+      for (final estado in estados) {
+        final itemId = int.parse(estado['itemId'].toString());
+        itemsData.putIfAbsent(
+            itemId,
+            () => {
+                  'id': itemId,
+                  'estado': estado['estado'],
+                  'comentario': estado['comentario'] ?? '',
+                  'fotos': [],
+                  'repuestos': [],
                 });
-              }
-            }
-          }
+      }
 
-          // Siempre agregar el item al payload
-          payload['repuestos'][item.id.toString()] = itemData;
+      // Agregar fotos
+      for (final foto in fotos) {
+        final itemId = int.parse(foto['itemId'].toString());
+        if (itemsData.containsKey(itemId)) {
+          itemsData[itemId]!['fotos'].add(foto['fotos']);
         }
       }
 
-      print('Payload final:');
+      // Agregar repuestos
+      for (final repuesto in repuestos) {
+        final itemId = int.parse(repuesto['itemId'].toString());
+        final repuestoMap = {
+          'id': 1,
+          'cantidad': int.parse(repuesto['cantidad'].toString()),
+          'comentario': repuesto['comentario'] ?? '',
+          'estado': 'pendiente',
+          'precio_unitario':
+              double.tryParse(repuesto['precio_venta'].toString()) ?? 0,
+          'repuesto': {
+            'id': int.parse(repuesto['repuestoId'].toString()),
+            'nombre': repuesto['nombre'] ?? 'Repuesto',
+          }
+        };
+
+        if (itemsData.containsKey(itemId)) {
+          itemsData[itemId]!['repuestos'].add(repuestoMap);
+        }
+      }
+
+      final payload = {
+        'firma_cliente': firmaCliente,
+        'repuestos':
+            itemsData.map((key, value) => MapEntry(key.toString(), value)),
+      };
+
+      // Antes de enviar, imprimir el payload para debug
+      print('Payload a enviar:');
       print(jsonEncode(payload));
 
+      // Enviar al servidor
       final response =
           await ApiService.finalizarVisita(widget.visit.id, payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        // Si es exitoso, eliminar la solicitud
+        await db.deleteSolicitud(widget.visit.id);
+
         if (mounted) {
           Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } else {
-        print('Error response: ${response.body}');
+        // Si falla, marcar como pendiente de subir
+        await db.marcarComoPendienteDeSubir(widget.visit.id);
         throw Exception('Error al finalizar la visita: ${response.statusCode}');
       }
     } catch (e) {
-      print('Exception details: $e');
+      // Si hay cualquier error, marcar como pendiente de subir
+      await LocalDatabase().marcarComoPendienteDeSubir(widget.visit.id);
 
-      String errorMessage = '';
-      try {
-        if (e.toString().contains('Exception:')) {
-          errorMessage = e.toString().replaceAll('Exception:', '').trim();
-          if (errorMessage.contains('{')) {
-            final errorJson = jsonDecode(errorMessage);
-            if (errorJson['message'] is List) {
-              errorMessage = (errorJson['message'] as List).join('\n');
-            } else {
-              errorMessage = errorJson['message'].toString();
-            }
-          }
-        } else {
-          errorMessage = e.toString();
-        }
-      } catch (_) {
-        errorMessage = e.toString();
-      }
-
+      print('Error: $e');
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Error al finalizar la visita'),
-              content: SingleChildScrollView(
-                child: Text(errorMessage),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cerrar'),
-                ),
-              ],
-            );
-          },
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al finalizar la visita: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1365,5 +1534,169 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
       case CheckState.noAplica:
         return 'no_aplica';
     }
+  }
+
+  void _addRepuesto(int subItemId, Repuesto repuesto) async {
+    try {
+      // Primero guardar en la base de datos local
+      await LocalDatabase().insertRepuesto(
+        subItemId,
+        repuesto,
+        1, // cantidad inicial
+        widget.visit.id, // ID de la visita
+      );
+
+      // Luego actualizar la UI
+      setState(() {
+        if (!subItemRepuestos.containsKey(subItemId)) {
+          subItemRepuestos[subItemId] = [];
+        }
+        subItemRepuestos[subItemId]!.add(
+          RepuestoAsignado(
+            repuesto: repuesto,
+            cantidad: 1,
+          ),
+        );
+      });
+
+      print('Repuesto agregado a DB local y UI:');
+      print('SubItem ID: $subItemId');
+      print('Repuesto: ${repuesto.articulo}');
+      print('Visita ID: ${widget.visit.id}');
+    } catch (e) {
+      print('Error al guardar repuesto en DB local: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar repuesto: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Agregar este widget antes de la lista de subItems
+  Widget _buildMarkAllConformeButton(int listaId) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: ElevatedButton.icon(
+        onPressed: () {
+          setState(() {
+            // Obtener todos los subItems de esta lista
+            for (var item in widget.listasInspeccion
+                .firstWhere((l) => l.id == listaId)
+                .items) {
+              for (var subItem in item.subItems) {
+                // Marcar como checked y conforme
+                subItemChecks[listaId]![subItem.id] = true;
+                subItemStates[listaId]![subItem.id] = CheckState.conforme;
+              }
+            }
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Todos los items marcados como conforme'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        },
+        icon: const Icon(Icons.done_all),
+        label: const Text('Marcar todo conforme'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  // Modificar el ExpansionPanel para incluir el nuevo botón
+  Widget _buildExpansionPanel(InspeccionList lista) {
+    return ExpansionPanelList(
+      children: [
+        ExpansionPanel(
+          headerBuilder: (context, isExpanded) => ListTile(
+            title: Text(lista.name),
+            subtitle: Text(
+                '${_getCompletedItemsCount(lista.id)}/${_getTotalItemsCount(lista.id)} items completados'),
+          ),
+          body: Column(
+            children: [
+              _buildMarkAllConformeButton(lista.id),
+              // ... resto del contenido del panel
+            ],
+          ),
+          isExpanded: sectionChecks[lista.id] ?? false,
+        ),
+      ],
+    );
+  }
+
+  // Agregar este método para cambiar el estado de todos los subItems de un item
+  Widget _buildChangeStateButton(ChecklistItem item, int listaId) {
+    CheckState currentState =
+        subItemStates[listaId]?[item.subItems.first.id] ?? CheckState.conforme;
+    String buttonText;
+    Color buttonColor;
+
+    switch (currentState) {
+      case CheckState.conforme:
+        buttonText = 'Cambiar a No Conforme';
+        buttonColor = Colors.red;
+        break;
+      case CheckState.noConforme:
+        buttonText = 'Cambiar a No Aplica';
+        buttonColor = Colors.grey;
+        break;
+      case CheckState.noAplica:
+        buttonText = 'Cambiar a Conforme';
+        buttonColor = Colors.green;
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: ElevatedButton.icon(
+        onPressed: () async {
+          final db = LocalDatabase();
+          setState(() {
+            for (var subItem in item.subItems) {
+              CheckState nextState;
+              switch (currentState) {
+                case CheckState.conforme:
+                  nextState = CheckState.noConforme;
+                  break;
+                case CheckState.noConforme:
+                  nextState = CheckState.noAplica;
+                  break;
+                case CheckState.noAplica:
+                  nextState = CheckState.conforme;
+                  break;
+              }
+              subItemStates[listaId]![subItem.id] = nextState;
+              subItemChecks[listaId]![subItem.id] = true;
+
+              // Guardar en DB
+              db.changeEstado(
+                subItem.id,
+                _getEstadoString(nextState),
+                widget.visit.id,
+              );
+            }
+          });
+        },
+        icon: const Icon(Icons.change_circle_outlined),
+        label: Text(buttonText),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: buttonColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+      ),
+    );
+  }
+
+  bool _canFinish() {
+    return true; // Siempre permite finalizar
   }
 }

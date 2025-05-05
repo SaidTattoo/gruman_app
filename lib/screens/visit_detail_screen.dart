@@ -8,6 +8,7 @@ import '../models/checklist_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'checklist_clima.dart';
+import '../DB/LocalDB.dart';
 
 class VisitDetailScreen extends StatefulWidget {
   final Visit visit;
@@ -26,12 +27,16 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
   late Visit currentVisit;
   Timer? _timer;
   String _tiempoTranscurrido = '';
+  bool _servicioIniciado = false;
+  String? _latitud;
+  String? _longitud;
 
   @override
   void initState() {
     super.initState();
     currentVisit = widget.visit;
-    _iniciarTimer();
+    _verificarServicioIniciado();
+    _cargarCoordenadas();
   }
 
   @override
@@ -40,15 +45,49 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     super.dispose();
   }
 
-  void _iniciarTimer() {
-    if (currentVisit.fechaHoraInicioServicio != null) {
-      // Actualizar inmediatamente
-      _actualizarTiempoTranscurrido();
+  void _verificarServicioIniciado() async {
+    final db = LocalDatabase();
+    try {
+      final horaInicio = await db.getHoraInicioServicio(currentVisit.id);
+      if (horaInicio != null) {
+        setState(() {
+          _servicioIniciado = true;
+          currentVisit = currentVisit.copyWith(
+              fechaHoraInicioServicio: DateTime.parse(horaInicio));
+        });
+        _iniciarTimer();
+      }
+    } catch (e) {
+      print('Error verificando servicio iniciado: $e');
+    }
+  }
 
-      // Configurar el timer para actualizar cada segundo
-      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+  void _iniciarTimer() async {
+    final db = LocalDatabase();
+    try {
+      // Obtener hora de inicio desde DB local
+      final horaInicio = await db.getHoraInicioServicio(currentVisit.id);
+      print('Hora inicio obtenida: $horaInicio');
+
+      if (horaInicio != null) {
+        setState(() {
+          currentVisit = currentVisit.copyWith(
+              fechaHoraInicioServicio: DateTime.parse(horaInicio));
+        });
+
+        // Actualizar inmediatamente
         _actualizarTiempoTranscurrido();
-      });
+
+        // Configurar el timer para actualizar cada segundo
+        _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          _actualizarTiempoTranscurrido();
+        });
+      } else {
+        print(
+            'No se encontró hora de inicio para la visita ${currentVisit.id}');
+      }
+    } catch (e) {
+      print('Error obteniendo hora inicio: $e');
     }
   }
 
@@ -71,6 +110,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
 
   void _iniciarServicio() async {
     try {
+      final db = LocalDatabase();
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -83,6 +123,11 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
+      // Guardar en DB local
+      await db.iniciarServicio(currentVisit.id, position.latitude.toString(),
+          position.longitude.toString());
+
+      // Enviar al API
       await _apiService.post(
         'solicitar-visita/iniciar-servicio/${currentVisit.id}',
         {
@@ -90,14 +135,20 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
           'longitud_movil': position.longitude.toString(),
         },
       );
-
-      final visitData =
-          await _apiService.get('solicitar-visita/${currentVisit.id}');
-
+      final servicioIniciadoStatus =
+          await db.getHoraInicioServicio(currentVisit.id);
+      print('Servicio iniciado correctamente $servicioIniciadoStatus');
       if (mounted) {
+        // Actualizar estado local
         setState(() {
-          currentVisit = Visit.fromJson(visitData);
+          _servicioIniciado = true;
+          _latitud = position.latitude.toString();
+          _longitud = position.longitude.toString();
         });
+
+        // Recargar datos
+        _verificarServicioIniciado();
+        _cargarCoordenadas();
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -105,24 +156,6 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
             backgroundColor: Colors.green,
           ),
         );
-
-        List<InspeccionList> listaInspeccion = [];
-        try {
-          if (currentVisit.client['listaInspeccion'] != null) {
-            listaInspeccion = (currentVisit.client['listaInspeccion'] as List)
-                .map((item) => InspeccionList.fromJson(item))
-                .toList();
-          }
-        } catch (e) {
-          print('Error al cargar lista de inspección: $e');
-          // Mostrar mensaje al usuario
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error al cargar la lista de inspección'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
       }
     } catch (e) {
       print('Error: $e');
@@ -171,6 +204,14 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
         );
       },
     );
+  }
+
+  void _cargarCoordenadas() async {
+    final coordenadas = await LocalDatabase().getCoordenadas(currentVisit.id);
+    setState(() {
+      _latitud = coordenadas['latitud'];
+      _longitud = coordenadas['longitud'];
+    });
   }
 
   @override
@@ -399,14 +440,45 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                   ),
                 ),
               ],
+              if (_latitud != null && _longitud != null) ...[
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ubicación Registrada',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on,
+                                color: Color(0xFF3F3FFF), size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Lat: $_latitud, Long: $_longitud',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: currentVisit.fechaHoraInicioServicio == null
-                          ? _mostrarDialogConfirmacion
-                          : () {
+                      onPressed: _servicioIniciado
+                          ? () {
                               final listaInspeccion = (currentVisit
                                       .client['listaInspeccion'] as List)
                                   .map((item) => InspeccionList.fromJson(item))
@@ -414,12 +486,6 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
 
                               final bool esVisitaClima =
                                   currentVisit.client['clima'] == true;
-                              print('DEBUG - Datos de clima:');
-                              print('Cliente: ${currentVisit.client}');
-                              print(
-                                  'Valor clima: ${currentVisit.client['clima']}');
-                              print('Es visita clima: $esVisitaClima');
-
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -434,15 +500,14 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                                         ),
                                 ),
                               );
-                            },
+                            }
+                          : _mostrarDialogConfirmacion,
                       icon: const Icon(
                         Icons.play_circle_outline,
                         color: Colors.white,
                       ),
                       label: Text(
-                        currentVisit.fechaHoraInicioServicio == null
-                            ? 'INICIAR VISITA'
-                            : 'IR A VISITA',
+                        _servicioIniciado ? 'IR A VISITA' : 'INICIAR VISITA',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -450,10 +515,9 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            currentVisit.fechaHoraInicioServicio == null
-                                ? Colors.green
-                                : const Color(0xFF3F3FFF),
+                        backgroundColor: _servicioIniciado
+                            ? const Color(0xFF3F3FFF)
+                            : Colors.green,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),

@@ -4,11 +4,10 @@ class Repuesto {
   final String articulo;
   final String marca;
   final String codigoBarra;
-  final int precio;
-  final int precioNetoCompra;
-  final int sobreprecio;
-  final int precioIva;
-  final int precioBruto;
+  final double precio_compra;
+  final double precio_venta;
+  final double valor_uf;
+  final bool clima;
 
   Repuesto({
     required this.id,
@@ -16,25 +15,37 @@ class Repuesto {
     required this.articulo,
     required this.marca,
     required this.codigoBarra,
-    required this.precio,
-    required this.precioNetoCompra,
-    required this.sobreprecio,
-    required this.precioIva,
-    required this.precioBruto,
+    required this.precio_compra,
+    required this.precio_venta,
+    required this.valor_uf,
+    required this.clima,
   });
 
   factory Repuesto.fromJson(Map<String, dynamic> json) {
     return Repuesto(
-      id: json['id'] as int,
-      familia: json['familia'] as String,
-      articulo: json['articulo'] as String,
-      marca: json['marca'] as String,
-      codigoBarra: json['codigoBarra'] as String,
-      precio: json['precio'] as int,
-      precioNetoCompra: json['precioNetoCompra'] as int,
-      sobreprecio: json['sobreprecio'] as int,
-      precioIva: json['precioIva'] as int,
-      precioBruto: json['precioBruto'] as int,
+      id: int.parse(json['id'].toString()),
+      familia: json['familia'] ?? '',
+      articulo: json['articulo'] ?? '',
+      marca: json['marca'] ?? '',
+      codigoBarra: json['codigoBarra'] ?? '',
+      precio_compra: double.tryParse(json['precio_compra'].toString()) ?? 0.0,
+      precio_venta: double.tryParse(json['precio_venta'].toString()) ?? 0.0,
+      valor_uf: double.tryParse(json['valor_uf'].toString()) ?? 0.0,
+      clima: json['clima'] == 1 || json['clima'] == true,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familia': familia,
+      'articulo': articulo,
+      'marca': marca,
+      'codigoBarra': codigoBarra,
+      'precio_compra': precio_compra,
+      'precio_venta': precio_venta,
+      'valor_uf': valor_uf,
+      'clima': clima,
+    };
   }
 }

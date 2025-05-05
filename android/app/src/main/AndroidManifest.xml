@@ -10,9 +10,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     
     <application
-        android:label="ATLANTIS"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:label="ATLANTIS"
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

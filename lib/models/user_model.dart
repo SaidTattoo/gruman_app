@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Especialidad {
   final int id;
   final String nombre;
@@ -15,6 +17,14 @@ class Especialidad {
       nombre: json['nombre'] as String,
       deleted: json['deleted'] as bool,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'deleted': deleted,
+    };
   }
 }
 
@@ -39,6 +49,15 @@ class Cliente {
       logo: json['logo'] as String? ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'rut': rut,
+      'logo': logo,
+    };
+  }
 }
 
 class UserModel {
@@ -49,6 +68,7 @@ class UserModel {
   final List<Especialidad> especialidades;
   final String profile;
   final List<Cliente> clients;
+  final bool isOffline;
 
   UserModel({
     required this.id,
@@ -58,6 +78,7 @@ class UserModel {
     required this.especialidades,
     required this.profile,
     required this.clients,
+    this.isOffline = false,
   });
 
   factory UserModel.fromDecodedToken(Map<String, dynamic> json) {
@@ -75,6 +96,40 @@ class UserModel {
               ?.map((e) => Cliente.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      isOffline: false,
     );
+  }
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'] as int,
+      email: json['email'] as String,
+      name: json['name'] as String,
+      rut: json['rut'] as String,
+      profile: json['profile'] as String,
+      isOffline: json['isOffline'] as bool? ?? false,
+      especialidades: (json['especialidades'] as List?)
+              ?.map((e) => Especialidad.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      clients: (json['clients'] as List?)
+              ?.map((e) => Cliente.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      'rut': rut,
+      'profile': profile,
+      'isOffline': isOffline ? 1 : 0,
+      'especialidades':
+          jsonEncode(especialidades.map((e) => e.toJson()).toList()),
+      'clients': jsonEncode(clients.map((e) => e.toJson()).toList()),
+    };
   }
 }

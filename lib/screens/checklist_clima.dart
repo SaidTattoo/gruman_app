@@ -15,6 +15,8 @@ import '../services/api_service.dart';
 import 'package:http_parser/http_parser.dart';
 import 'visit_detail_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../DB/LocalDB.dart';
+import 'package:image/image.dart' as img;
 
 class ChecklistClima extends StatefulWidget {
   final Visit visit;
@@ -31,13 +33,8 @@ class ChecklistClima extends StatefulWidget {
 }
 
 // Primero agregamos un enum para los estados
-enum CheckState {
-  conforme,
-  noConforme,
-  noAplica,
-}
+enum CheckState { conforme, noConforme, noAplica }
 
-// Agregar una clase para manejar el repuesto con su cantidad
 class RepuestoAsignado {
   final Repuesto repuesto;
   int cantidad;
@@ -52,7 +49,7 @@ class RepuestoAsignado {
 
 // Modificar la clase ItemPhoto para soportar web
 class ItemPhoto {
-  final dynamic file; // Puede ser File or Uint8List
+  final dynamic file;
   final DateTime timestamp;
   final bool isWeb;
 
@@ -64,14 +61,16 @@ class ItemPhoto {
 }
 
 class _ChecklistClimaState extends State<ChecklistClima> {
+  int? currentActivoFijoId;
   final _apiService = ApiService();
   Map<int, bool> sectionChecks = {};
   Map<int, Map<int, bool>> subItemChecks = {};
   Map<int, Map<int, CheckState>> subItemStates =
       {}; // Nuevo mapa para los estados
-  Map<int, List<RepuestoAsignado>> subItemRepuestos = {};
+  Map<int, Map<int, RepuestoAsignado>> subItemRepuestos = {}; // activoFijoId -> subItemId -> RepuestoAsignado
   List<Repuesto>? repuestos; // Para almacenar la lista de repuestos disponibles
-  Map<int, List<ItemPhoto>> subItemPhotos = {};
+  Map<int, Map<int, List<ItemPhoto>>> subItemPhotos =
+      {}; // activoFijoId -> subItemId -> photos
   final ImagePicker _picker = ImagePicker();
   Map<int, String> subItemComments = {}; // Nuevo mapa para comentarios
   Uint8List? clientSignature;
@@ -83,34 +82,333 @@ class _ChecklistClimaState extends State<ChecklistClima> {
   @override
   void initState() {
     super.initState();
-    _loadRepuestos();
-    // Inicializar para cada lista y sus items
+    _initializeData();
+    _loadSavedPhotos();
+
+    print('Tipo de mantenimiento: ${widget.visit.tipoServicioId}');
+    print('Activo fijo ID: ${widget.visit.activo_fijo_id}');
+    print(
+        'Activos fijos cargados: ${widget.visit.local.activoFijoLocales.length}');
+
+    // Inicializar estados
     for (var lista in widget.listasInspeccion) {
-      sectionChecks[lista.id] = false;
-      subItemChecks[lista.id] = {};
-      subItemStates[lista.id] = {};
-      for (var item in lista.items) {
-        for (var subItem in item.subItems) {
-          subItemChecks[lista.id]![subItem.id] = false;
-          subItemStates[lista.id]![subItem.id] = CheckState.conforme;
+      for (var activo in widget.visit.local.activoFijoLocales) {
+        // Inicialización normal para todos los activos
+        if (subItemStates[activo.id] == null) {
+          subItemStates[activo.id] = {};
         }
+        if (subItemChecks[activo.id] == null) {
+          subItemChecks[activo.id] = {};
+        }
+        for (var item in lista.items) {
+          for (var subItem in item.subItems) {
+            subItemChecks[activo.id]![subItem.id] = false;
+            subItemStates[activo.id]![subItem.id] = CheckState.conforme;
+          }
+        }
+
+        // Inicializar estado del activo fijo
+        activoFijoEstados[activo.id] = 'funcionando';
       }
     }
-    // Inicializar estados de activos fijos como "funcionando"
-    for (var activo in widget.visit.local.activoFijoLocales) {
-      activoFijoEstados[activo.id] = 'funcionando';
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      final db = LocalDatabase();
+
+      print('Iniciando carga de datos...');
+      print(
+          'Número de activos: ${widget.visit.local.activoFijoLocales.length}');
+
+      // Primero intentamos cargar datos existentes
+      for (var activo in widget.visit.local.activoFijoLocales) {
+        print('Cargando datos para activo ${activo.id}...');
+
+        final savedData =
+            await db.getChecklistClimaData(activo.id, widget.visit.id);
+        print('Datos crudos encontrados para activo ${activo.id}: $savedData');
+
+        if (savedData.isNotEmpty) {
+          print('Encontrados datos guardados para activo ${activo.id}');
+          setState(() {
+            parametrosValues[activo.id] = {
+              'setPoint': savedData['medicion_SetPoint'] ?? '0',
+              'tempInjeccionFrio':
+                  savedData['medicion_TempInjeccionFrio'] ?? '0',
+              'tempInjeccionCalor':
+                  savedData['medicion_TempInjeccionCalor'] ?? '0',
+              'tempAmbiente': savedData['medicion_TempAmbiente'] ?? '0',
+              'tempRetorno': savedData['medicion_TempRetorno'] ?? '0',
+              'tempExterior': savedData['medicion_TempExterior'] ?? '0',
+              'setPointObs': savedData['medicion_SetPoint_observacion'] ?? '',
+              'tempInjeccionFrioObs':
+                  savedData['medicion_TempInjeccionFrio_observacion'] ?? '',
+              'tempInjeccionCalorObs':
+                  savedData['medicion_TempInjeccionCalor_observacion'] ?? '',
+              'tempAmbienteObs':
+                  savedData['medicion_TempAmbiente_observacion'] ?? '',
+              'tempRetornoObs':
+                  savedData['medicion_TempRetorno_observacion'] ?? '',
+              'tempExteriorObs':
+                  savedData['medicion_TempExterior_observacion'] ?? '',
+              'consumoCompresorR': savedData['consumoCompresor_R'] ?? '0',
+              'consumoCompresorS': savedData['consumoCompresor_S'] ?? '0',
+              'consumoCompresorT': savedData['consumoCompresor_T'] ?? '0',
+              'consumoCompresorN': savedData['consumoCompresor_N'] ?? '0',
+              'tensionRS': savedData['tension_R_S'] ?? '0',
+              'tensionST': savedData['tension_S_T'] ?? '0',
+              'tensionTR': savedData['tension_T_R'] ?? '0',
+              'tensionTN': savedData['tension_T_N'] ?? '0',
+              'consumoTotalR': savedData['consumo_total_R'] ?? '0',
+              'consumoTotalS': savedData['consumo_total_S'] ?? '0',
+              'consumoTotalT': savedData['consumo_total_T'] ?? '0',
+              'consumoTotalN': savedData['consumo_total_N'] ?? '0',
+              'presionesAltas': savedData['presiones_altas'] ?? '0',
+              'presionesBajas': savedData['presiones_bajas'] ?? '0',
+            };
+          });
+          print(
+              'Datos cargados en el estado para activo ${activo.id}: ${parametrosValues[activo.id]}');
+        } else {
+          print(
+              'No se encontraron datos guardados para activo ${activo.id}, inicializando valores por defecto');
+          setState(() {
+            parametrosValues[activo.id] = {
+              'setPoint': '0',
+              'tempInjeccionFrio': '0',
+              'tempInjeccionCalor': '0',
+              'tempAmbiente': '0',
+              'tempRetorno': '0',
+              'tempExterior': '0',
+              'setPointObs': '',
+              'tempInjeccionFrioObs': '',
+              'tempInjeccionCalorObs': '',
+              'tempAmbienteObs': '',
+              'tempRetornoObs': '',
+              'tempExteriorObs': '',
+              'consumoCompresorR': '0',
+              'consumoCompresorS': '0',
+              'consumoCompresorT': '0',
+              'consumoCompresorN': '0',
+              'tensionRS': '0',
+              'tensionST': '0',
+              'tensionTR': '0',
+              'tensionTN': '0',
+              'consumoTotalR': '0',
+              'consumoTotalS': '0',
+              'consumoTotalT': '0',
+              'consumoTotalN': '0',
+              'presionesAltas': '0',
+              'presionesBajas': '0',
+            };
+          });
+        }
+      }
+
+      // Cargamos los repuestos
+      await _loadRepuestos();
+
+      // Cargar fotos guardadas
+      await _loadSavedPhotos();
+
+      // Cargar comentarios
+      try {
+        final savedComments = await db.getEstados(
+          'item_estado',
+          where: 'solicitarVisitaId = ?',
+          whereArgs: [widget.visit.id],
+        );
+        setState(() {
+          for (var comment in savedComments) {
+            if (comment['comentario'] != null && comment['comentario'] != '') {
+              subItemComments[comment['itemId'] as int] =
+                  comment['comentario'] as String;
+            }
+          }
+        });
+      } catch (e) {
+        print('Error cargando comentarios: $e');
+      }
+
+      // Cargar estados guardados
+      try {
+        final savedEstados = await db.getEstados(
+          'item_estado',
+          where: 'solicitarVisitaId = ?',
+          whereArgs: [widget.visit.id],
+        );
+
+        setState(() {
+          for (var estado in savedEstados) {
+            final itemId = estado['itemId'] as int;
+            final estadoValue = estado['estado'] as String;
+
+            CheckState checkState;
+            switch (estadoValue) {
+              case 'conforme':
+                checkState = CheckState.conforme;
+                break;
+              case 'noConforme':
+                checkState = CheckState.noConforme;
+                break;
+              case 'noAplica':
+                checkState = CheckState.noAplica;
+                break;
+              default:
+                checkState = CheckState.conforme;
+            }
+
+            for (var activoId in subItemStates.keys) {
+              if (subItemStates[activoId]?.containsKey(itemId) ?? false) {
+                subItemStates[activoId]![itemId] = checkState;
+              }
+            }
+          }
+        });
+        print('Estados cargados: $subItemStates');
+      } catch (e) {
+        print('Error cargando estados: $e');
+      }
+
+      print('Inicialización de datos completada');
+      print('Estado final de parametrosValues: $parametrosValues');
+    } catch (e) {
+      print('Error inicializando datos: $e');
     }
   }
 
   Future<void> _loadRepuestos() async {
     try {
+      // Cargar repuestos del API
       final data = await _apiService.get('repuestos');
+
+      // Cargar repuestos guardados de la DB local
+      final db = LocalDatabase();
+      final savedRepuestos = await db.getRepuestos(widget.visit.id);
+
       setState(() {
+        // Cargar lista de repuestos disponibles
         repuestos =
             (data as List).map((item) => Repuesto.fromJson(item)).toList();
+
+        // Cargar repuestos asignados
+        for (var repuesto in savedRepuestos) {
+          final itemId = repuesto['itemId'] as int;
+          final repuestoId = repuesto['repuestoId'] as int;
+          final cantidad = int.parse(repuesto['cantidad'].toString());
+          final comentario = repuesto['comentario'] as String;
+
+          // Buscar el repuesto en la lista de repuestos disponibles
+          final repuestoData = repuestos!.firstWhere(
+            (r) => r.id == repuestoId,
+            orElse: () => throw Exception('Repuesto no encontrado'),
+          );
+
+          // Agregar al mapa de repuestos asignados
+          if (subItemRepuestos[itemId] == null) {
+            subItemRepuestos[itemId] = {};
+          }
+          subItemRepuestos[itemId]![repuestoId] = RepuestoAsignado(
+            repuesto: repuestoData,
+            cantidad: cantidad,
+            comentario: comentario,
+          );
+        }
       });
+
+      print('Repuestos cargados: ${repuestos?.length ?? 0}');
+      print('Repuestos asignados: ${subItemRepuestos.length}');
     } catch (e) {
       print('Error cargando repuestos: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando repuestos: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadSavedPhotos() async {
+    try {
+      final db = LocalDatabase();
+      final allFotos = await db.getFotosItem(
+        'item_fotos',
+        where: 'solicitarVisitaId = ?',
+        whereArgs: [widget.visit.id],
+      );
+
+      print('Fotos cargadas de DB: $allFotos');
+
+      setState(() {
+        for (var foto in allFotos) {
+          final itemId = foto['itemId'] as int;
+          final activoFijoId = foto['activoFijoId'] as int;
+
+          // Inicializar la estructura si no existe
+          if (subItemPhotos[activoFijoId] == null) {
+            subItemPhotos[activoFijoId] = {};
+          }
+          if (subItemPhotos[activoFijoId]![itemId] == null) {
+            subItemPhotos[activoFijoId]![itemId] = [];
+          }
+
+          // Agregar la foto
+          subItemPhotos[activoFijoId]![itemId]!.add(
+            ItemPhoto(
+              file: base64Decode(foto['fotos'] as String),
+              timestamp: DateTime.parse(foto['created_at'] as String),
+              isWeb: true,
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      print('Error cargando fotos guardadas: $e');
+    }
+  }
+
+  Future<void> _loadSavedRepuestos() async {
+    try {
+      final db = LocalDatabase();
+      final allRepuestos =
+          await db.getRepuestos(widget.visit.id); // Cambiar nombre del método
+
+      setState(() {
+        for (var repuesto in allRepuestos) {
+          final itemId = repuesto['itemId'] as int;
+          final activoFijoId = repuesto['activoFijoId'] as int;
+          final repuestoId = repuesto['repuestoId'] as int;
+
+          // Inicializar la estructura si no existe
+          if (subItemRepuestos[activoFijoId] == null) {
+            subItemRepuestos[activoFijoId] = {};
+          }
+          if (subItemRepuestos[activoFijoId]![itemId] == null) {
+            subItemRepuestos[activoFijoId]![itemId] = {};
+          }
+
+          subItemRepuestos[activoFijoId]![itemId]![repuestoId] =
+              RepuestoAsignado(
+            repuesto: Repuesto(
+              id: repuestoId,
+              articulo: repuesto['articulo'] as String,
+              familia: repuesto['familia'] as String,
+              marca: repuesto['marca'] as String,
+              codigoBarra: repuesto['codigoBarra'] as String,
+              precio_compra: double.parse(repuesto['precio_compra'].toString()),
+              precio_venta: double.parse(repuesto['precio_venta'].toString()),
+              valor_uf: double.parse(repuesto['valor_uf'].toString()),
+              clima: repuesto['clima'] as bool,
+            ),
+            cantidad: repuesto['cantidad'] as int,
+            comentario: repuesto['comentario'] as String?,
+          );
+        }
+      });
+    } catch (e) {
+      print('Error cargando repuestos guardados: $e');
     }
   }
 
@@ -215,156 +513,117 @@ class _ChecklistClimaState extends State<ChecklistClima> {
     );
   }
 
-  // Modificar el método para manejar fotos
-  void _showPhotoOptions(int subItemId) {
-    // Llamar directamente a _takePicture en lugar de mostrar opciones
-    _takePicture(subItemId);
-
-    // O si prefieres mantener el modal pero solo con la opción de cámara:
-    /*
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Tomar foto'),
-              onTap: () {
-                Navigator.pop(context);
-                _takePicture(subItemId);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-    */
+  // Actualizar la función _showPhotoOptions
+  Future<void> _showPhotoOptions(int subItemId) async {
+    currentSubItemId = subItemId; // Guardar el ID actual
+    // Llamar directamente a _takePhoto en lugar de mostrar opciones
+    await _takePhoto();
   }
 
-  Future<bool> _requestPermission(Permission permission) async {
-    if (await permission.isGranted) {
-      return true;
-    } else {
-      var result = await permission.request();
-      return result.isGranted;
-    }
-  }
-
-  // Modificar el método para tomar/seleccionar foto
-  Future<void> _pickImage(int subItemId, ImageSource source) async {
+  // Función para tomar foto
+  Future<void> _takePhoto() async {
     try {
-      // Solicitar permisos
-      if (source == ImageSource.gallery) {
-        final status = await Permission.photos.request();
-        if (!status.isGranted) {
-          throw Exception('Se requiere permiso para acceder a la galería');
-        }
-      } else {
-        final status = await Permission.camera.request();
-        if (!status.isGranted) {
-          throw Exception('Se requiere permiso para acceder a la cámara');
-        }
-      }
-
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        imageQuality: 70, // Reducir calidad para optimizar
-        maxWidth: 1024, // Limitar tamaño máximo
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 50, // Reducir calidad para optimizar almacenamiento
       );
-
-      if (image != null) {
-        setState(() {
-          subItemPhotos[subItemId] = [
-            ...(subItemPhotos[subItemId] ?? []),
-            ItemPhoto(
-              file: image.path,
-              timestamp: DateTime.now(),
-              isWeb: false,
-            ),
-          ];
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _takePicture(int subItemId) async {
-    try {
-      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
       if (photo != null) {
-        _showLoadingDialog('Subiendo foto...');
-
-        try {
-          if (kIsWeb) {
-            final bytes = await photo.readAsBytes();
-            String photoUrl = await _uploadPhoto(
-                bytes, widget.visit.id, subItemId, photo.name);
-
-            setState(() {
-              if (subItemPhotos[subItemId] == null) {
-                subItemPhotos[subItemId] = [];
-              }
-              subItemPhotos[subItemId]!.add(
-                ItemPhoto(
-                  file: bytes,
-                  timestamp: DateTime.now(),
-                  isWeb: true,
-                ),
-              );
-            });
-          } else {
-            // Para móvil, guardamos una copia del archivo
-            final File photoFile = File(photo.path);
-            String photoUrl = await _uploadPhoto(
-                photoFile.path, widget.visit.id, subItemId, photo.name);
-
-            setState(() {
-              if (subItemPhotos[subItemId] == null) {
-                subItemPhotos[subItemId] = [];
-              }
-              subItemPhotos[subItemId]!.add(
-                ItemPhoto(
-                  file: photoFile, // Guardamos el File completo
-                  timestamp: DateTime.now(),
-                  isWeb: false,
-                ),
-              );
-            });
-          }
-
-          Navigator.of(context, rootNavigator: true).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Foto subida exitosamente'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } catch (e) {
-          Navigator.of(context, rootNavigator: true).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al subir la foto: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        await _processPhoto(photo);
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al tomar la foto: $e')),
+      );
+    }
+  }
+
+  // Función para procesar la foto
+  Future<void> _processPhoto(XFile photo) async {
+    if (currentSubItemId == null || currentActivoFijoId == null) return;
+
+    try {
+      _showLoadingDialog('Procesando imagen...');
+
+      if (kIsWeb) {
+        final bytes = await photo.readAsBytes();
+        final base64Image = base64Encode(bytes);
+
+        final db = LocalDatabase();
+        await db.insertFoto(
+          currentSubItemId!,
+          widget.visit.id,
+          base64Image,
+          activoFijoId: currentActivoFijoId,
+        );
+
+        setState(() {
+          if (subItemPhotos[currentActivoFijoId!] == null) {
+            subItemPhotos[currentActivoFijoId!] = {};
+          }
+          if (subItemPhotos[currentActivoFijoId!]![currentSubItemId!] == null) {
+            subItemPhotos[currentActivoFijoId!]![currentSubItemId!] = [];
+          }
+
+          final photoData = kIsWeb ? bytes : photo.path;
+          subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.add(
+            ItemPhoto(
+              file: photoData,
+              timestamp: DateTime.now(),
+              isWeb: kIsWeb,
+            ),
+          );
+          print(
+              'Foto agregada al estado: ${subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.length} fotos totales');
+        });
+      } else {
+        final File photoFile = File(photo.path);
+        final bytes = await photoFile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+
+        final db = LocalDatabase();
+        await db.insertFoto(
+          currentSubItemId!,
+          widget.visit.id,
+          base64Image,
+          activoFijoId: currentActivoFijoId,
+        );
+
+        setState(() {
+          if (subItemPhotos[currentActivoFijoId!] == null) {
+            subItemPhotos[currentActivoFijoId!] = {};
+          }
+          if (subItemPhotos[currentActivoFijoId!]![currentSubItemId!] == null) {
+            subItemPhotos[currentActivoFijoId!]![currentSubItemId!] = [];
+          }
+
+          final photoData = kIsWeb ? bytes : photoFile;
+          subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.add(
+            ItemPhoto(
+              file: photoData,
+              timestamp: DateTime.now(),
+              isWeb: kIsWeb,
+            ),
+          );
+          print(
+              'Foto agregada al estado: ${subItemPhotos[currentActivoFijoId!]![currentSubItemId!]!.length} fotos totales');
+        });
+      }
+
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto guardada exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error procesando foto: $e');
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al procesar la foto: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -390,152 +649,302 @@ class _ChecklistClimaState extends State<ChecklistClima> {
   // Modificar el CheckboxListTile
   Widget _buildChecklistItem(InspeccionList lista, SubItem subItem,
       {required int activoId}) {
-    final isChecked = subItemChecks[activoId]?[subItem.id] ?? false;
-    final state = subItemStates[activoId]?[subItem.id] ?? CheckState.conforme;
-    final repuestosAsignados = subItemRepuestos[subItem.id] ?? [];
-    final photos = subItemPhotos[subItem.id] ?? [];
-    final comment = subItemComments[subItem.id] ?? '';
+    final hasPhotos =
+        (subItemPhotos[activoId]?[subItem.id]?.isNotEmpty ?? false) ||
+            (subItemPhotosUrls[subItem.id]?.isNotEmpty ?? false);
+    final hasRepuestos = _hasRepuestos(subItem.id, activoId);
+    final hasComments = subItemComments[subItem.id]?.isNotEmpty ?? false;
 
-    return Column(
-      children: [
-        CheckboxListTile(
-          title: Text(
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nombre del ítem
+          Text(
             subItem.name,
-            style: const TextStyle(fontSize: 14),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          value: isChecked,
-          onChanged: (bool? value) {
-            setState(() {
-              if (subItemChecks[activoId] == null) {
-                subItemChecks[activoId] = {};
-              }
-              if (subItemStates[activoId] == null) {
-                subItemStates[activoId] = {};
-              }
-              subItemChecks[activoId]![subItem.id] = value ?? false;
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 4,
-          ),
-        ),
-        if (isChecked) ...[
-          Padding(
-            padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 16),
+
+          // Estados en forma de segmentos redondeados
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () =>
-                          _showStateSelector(context, lista, subItem),
-                      icon: Icon(
-                        Icons.check_circle,
-                        color: _getStateColor(state),
-                      ),
-                      label: Text(
-                        _getStateText(state),
-                        style: TextStyle(
-                          color: _getStateColor(state),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => _showPhotoOptions(subItem.id),
-                      icon: const Icon(Icons.photo_camera),
-                      label: const Text('Agregar Foto'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => _showCommentDialog(subItem.id),
-                      icon: const Icon(Icons.comment),
-                      label: const Text('Comentario'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    if ((state == CheckState.noConforme ||
-                        state == CheckState.conforme))
-                      TextButton.icon(
-                        onPressed: () => _showRepuestosDialog(subItem.id),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Repuesto'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF3F3FFF),
-                        ),
-                      ),
-                  ],
+                Expanded(
+                  child: _buildStateButton(
+                    'Conforme',
+                    Icons.check_circle,
+                    CheckState.conforme,
+                    subItemStates[activoId]?[subItem.id] ?? CheckState.conforme,
+                    activoId,
+                    subItem.id,
+                  ),
                 ),
-                // Mostrar comentario si existe
-                if (comment.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8, bottom: 8),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.comment, size: 16, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            comment,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 16),
-                          onPressed: () => _showCommentDialog(subItem.id),
-                          color: Colors.grey,
-                        ),
-                      ],
-                    ),
+                Expanded(
+                  child: _buildStateButton(
+                    'No Conforme',
+                    Icons.cancel,
+                    CheckState.noConforme,
+                    subItemStates[activoId]?[subItem.id] ?? CheckState.conforme,
+                    activoId,
+                    subItem.id,
                   ),
-                // Mostrar fotos en grid
-                if (photos.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8, bottom: 8),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: photos.map((photo) {
-                        return _buildPhotoThumbnail(photo,
-                            subItemId: subItem.id);
-                      }).toList(),
-                    ),
+                ),
+                Expanded(
+                  child: _buildStateButton(
+                    'No Aplica',
+                    Icons.remove_circle,
+                    CheckState.noAplica,
+                    subItemStates[activoId]?[subItem.id] ?? CheckState.conforme,
+                    activoId,
+                    subItem.id,
                   ),
-                // Lista de repuestos
-                if (repuestosAsignados.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: repuestosAsignados
-                          .map((repuestoAsignado) =>
-                              _buildRepuestoItem(repuestoAsignado, subItem.id))
-                          .toList(),
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 16),
+
+          // Botones de acción con estilo suave
+          Column(
+            children: [
+              _buildActionButton(
+                'Agregar Foto',
+                Icons.photo_camera,
+                hasPhotos,
+                () {
+                  currentSubItemId = subItem.id;
+                  _showPhotoOptions(subItem.id);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildActionButton(
+                'Agregar Comentario',
+                Icons.comment,
+                hasComments,
+                () => _showCommentDialog(subItem.id),
+              ),
+              const SizedBox(height: 8),
+              _buildActionButton(
+                'Agregar Repuesto',
+                Icons.build,
+                hasRepuestos,
+                () => _showRepuestosDialog(subItem.id),
+              ),
+            ],
+          ),
+
+          // Mostrar contenido existente
+          if (hasPhotos) _buildPhotosList(subItem.id, activoId),
+          if (hasComments) _buildCommentView(subItem.id),
+          if (hasRepuestos) _buildRepuestosList(subItem.id, activoId),
         ],
-      ],
+      ),
     );
   }
 
-  Widget _buildPhotoThumbnail(ItemPhoto photo, {required int subItemId}) {
+  Widget _buildStateButton(String text, IconData icon, CheckState state,
+      CheckState currentState, int activoId, int subItemId) {
+    final isSelected = currentState == state;
+    return InkWell(
+      onTap: () async {
+        await _updateItemState(activoId, subItemId, state);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withOpacity(0.1) : null,
+          borderRadius: BorderRadius.circular(25),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected ? Colors.blue : Colors.grey,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: TextStyle(
+                color: isSelected ? Colors.blue : Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+      String text, IconData icon, bool isActive, VoidCallback onPressed) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          color: isActive ? Colors.blue : Colors.grey,
+          size: 20,
+        ),
+        label: Text(
+          text,
+          style: TextStyle(
+            color: isActive ? Colors.blue : Colors.grey,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Método auxiliar para mostrar la lista de fotos
+  Widget _buildPhotosList(int subItemId, int activoId) {
+    final photos = subItemPhotos[activoId]?[subItemId] ?? [];
+    final urls = subItemPhotosUrls[subItemId] ?? [];
+
+    print('Mostrando fotos para activo $activoId, subItem $subItemId');
+    print('Número de fotos: ${photos.length}');
+
+    return Container(
+      height: 120,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length + urls.length,
+        itemBuilder: (context, index) {
+          if (index < photos.length) {
+            return _buildPhotoThumbnail(photos[index], activoId, subItemId);
+          } else {
+            return _buildPhotoUrlThumbnail(urls[index - photos.length]);
+          }
+        },
+      ),
+    );
+  }
+
+  // Método auxiliar para mostrar comentarios
+  Widget _buildCommentView(int subItemId) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(subItemComments[subItemId] ?? ''),
+    );
+  }
+
+  // Método auxiliar para mostrar la lista de repuestos
+  Widget _buildRepuestosList(int subItemId, int activoId) {
+    final repuestosMap = subItemRepuestos[activoId]?[subItemId] as Map<int, RepuestoAsignado>? ?? {};
+    final repuestosAsignados = repuestosMap.values.toList();
+
+    return Column(
+      children: repuestosAsignados.map((repuesto) {
+        return ListTile(
+          title: Text(repuesto.repuesto.articulo),
+          subtitle: Text('Cantidad: ${repuesto.cantidad}'),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: () {
+              setState(() {
+                subItemRepuestos[activoId]![subItemId] = null;
+              });
+            },
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // Actualizar el widget que muestra la imagen
+  Widget _buildPhotoThumbnail(ItemPhoto photo, int activoId, int subItemId) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: Stack(
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: photo.isWeb
+                  ? Image.memory(
+                      photo.file as Uint8List,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        print('Error loading image: $error');
+                        return const Center(child: Icon(Icons.error));
+                      },
+                    )
+                  : Image.file(
+                      photo.file as File,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        print('Error loading image: $error');
+                        return const Center(child: Icon(Icons.error));
+                      },
+                    ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                onPressed: () async {
+                  try {
+                    final db = LocalDatabase();
+                    // Eliminar la foto de la base de datos
+                    // await db.deleteFoto(subItemId, widget.visit.id, activoFijoId: activoId);
+
+                    // Eliminar la foto del estado
+                    setState(() {
+                      subItemPhotos[activoId]?[subItemId]?.remove(photo);
+                    });
+                  } catch (e) {
+                    print('Error eliminando foto: $e');
+                  }
+                },
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoUrlThumbnail(String url) {
     return Stack(
       children: [
         Container(
@@ -548,15 +957,10 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: photo.isWeb
-                ? Image.memory(
-                    photo.file as Uint8List,
-                    fit: BoxFit.cover,
-                  )
-                : Image.file(
-                    photo.file as File,
-                    fit: BoxFit.cover,
-                  ),
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         Positioned(
@@ -565,241 +969,16 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           child: IconButton(
             icon: const Icon(Icons.close, size: 20),
             onPressed: () {
-              setState(() {
-                subItemPhotos[subItemId]?.remove(photo);
-              });
+              final currentSubItem = currentSubItemId; // Usar el ID guardado
+              if (currentSubItem != null) {
+                setState(() {
+                  subItemPhotosUrls[currentSubItem]?.remove(url);
+                });
+              }
             },
           ),
         ),
       ],
-    );
-  }
-
-  String _getStateText(CheckState state) {
-    switch (state) {
-      case CheckState.conforme:
-        return 'Conforme';
-      case CheckState.noConforme:
-        return 'No Conforme';
-      case CheckState.noAplica:
-        return 'No Aplica';
-    }
-  }
-
-  Color _getStateColor(CheckState state) {
-    switch (state) {
-      case CheckState.conforme:
-        return Colors.green;
-      case CheckState.noConforme:
-        return Colors.red;
-      case CheckState.noAplica:
-        return Colors.grey;
-    }
-  }
-
-  void _showRepuestosDialog(int subItemId) {
-    String searchQuery = ''; // Para el filtro de búsqueda
-    List<Repuesto> filteredRepuestos = repuestos ?? []; // Lista filtrada
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Repuestos'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              // Filtrar repuestos basado en la búsqueda
-              filteredRepuestos = (repuestos ?? []).where((repuesto) {
-                return repuesto.articulo
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase()) ||
-                    repuesto.familia
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase()) ||
-                    repuesto.marca
-                        .toLowerCase()
-                        .contains(searchQuery.toLowerCase());
-              }).toList();
-
-              return Column(
-                children: [
-                  // Campo de búsqueda
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        hintText: 'Buscar repuesto...',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          searchQuery = value;
-                        });
-                      },
-                    ),
-                  ),
-                  // Lista de repuestos filtrada
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: filteredRepuestos.length,
-                      itemBuilder: (context, index) {
-                        final repuesto = filteredRepuestos[index];
-                        return ListTile(
-                          title: Text(repuesto.articulo),
-                          subtitle:
-                              Text('${repuesto.familia} - ${repuesto.marca}'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.add),
-                            onPressed: () {
-                              this.setState(() {
-                                if (subItemRepuestos[subItemId] == null) {
-                                  subItemRepuestos[subItemId] = [];
-                                }
-
-                                subItemRepuestos[subItemId]!.add(
-                                  RepuestoAsignado(
-                                    repuesto: repuesto,
-                                    comentario: '',
-                                  ),
-                                );
-
-                                print('Repuesto agregado:');
-                                print('SubItem ID: $subItemId');
-                                print('Repuesto: ${repuesto.articulo}');
-                                print('Cantidad: 1');
-                                print(
-                                    'Total repuestos en este item: ${subItemRepuestos[subItemId]!.length}');
-                              });
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Repuesto ${repuesto.articulo} agregado'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Mantener el widget _buildRepuestoItem como estaba antes
-  Widget _buildRepuestoItem(RepuestoAsignado repuestoAsignado, int subItemId) {
-    return ListTile(
-      dense: true,
-      title: Text(
-        repuestoAsignado.repuesto.articulo,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '${repuestoAsignado.repuesto.familia} - ${repuestoAsignado.repuesto.marca}',
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Wrap(
-        spacing: 4,
-        children: [
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.remove_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                if (repuestoAsignado.cantidad > 1) {
-                  repuestoAsignado.cantidad--;
-                }
-              });
-            },
-          ),
-          Text('${repuestoAsignado.cantidad}'),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.add_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                repuestoAsignado.cantidad++;
-              });
-            },
-          ),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-            onPressed: () {
-              setState(() {
-                subItemRepuestos[subItemId]?.remove(repuestoAsignado);
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Agregar método para mostrar el diálogo de comentario
-  void _showCommentDialog(int subItemId) {
-    final TextEditingController commentController = TextEditingController(
-      text: subItemComments[subItemId] ?? '',
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Comentario'),
-        content: TextField(
-          controller: commentController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Escriba su comentario aquí...',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                final comment = commentController.text.trim();
-                if (comment.isEmpty) {
-                  subItemComments.remove(subItemId);
-                } else {
-                  subItemComments[subItemId] = comment;
-                }
-              });
-              Navigator.pop(context);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF3F3FFF),
-            ),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -826,16 +1005,20 @@ class _ChecklistClimaState extends State<ChecklistClima> {
               itemBuilder: (context, index) {
                 final activo = widget.visit.local.activoFijoLocales[index];
                 // Verificar si este activo es el referenciado en la solicitud
-                final bool isMatchingActivo =
-                    widget.visit.activo_fijo_id == activo.id;
+                final bool isMatchingActivo = true;
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),
-                  // Aplicar color verde si coincide
-                  color:
-                      isMatchingActivo ? Colors.green.withOpacity(0.1) : null,
+                  // Reemplazar el color de fondo con un borde verde
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color: Colors.green.shade700,
+                      width: 1.5,
+                    ),
+                  ),
                   child: ExpansionTile(
-                    // Solo permitir expandir si coincide
                     enabled: isMatchingActivo,
                     title: Row(
                       children: [
@@ -848,19 +1031,15 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  // Color verde si coincide, gris si no
-                                  color: isMatchingActivo
-                                      ? Colors.green[900]
-                                      : Colors.grey[400],
+                                  color: Colors.green[
+                                      900], // Mantener el texto en verde oscuro
                                 ),
                               ),
                               Text(
                                 'Código: ${activo.codigoActivo}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isMatchingActivo
-                                      ? Colors.green[700]
-                                      : Colors.grey[400],
+                                  color: Colors.grey[400],
                                 ),
                               ),
                             ],
@@ -1009,33 +1188,33 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             [
               _buildMedicionField(
                 activoId,
-                'medicion_TempAmbiente',
+                'tempAmbiente',
                 'Temperatura Ambiente',
-                'medicion_TempAmbiente_observacion',
+                'tempAmbienteObs',
               ),
               _buildMedicionField(
                 activoId,
-                'medicion_TempInyeccionFrio',
+                'tempInjeccionFrio',
                 'Temperatura Inyección Frío',
-                'medicion_TempInyeccionFrio_observacion',
+                'tempInjeccionFrioObs',
               ),
               _buildMedicionField(
                 activoId,
-                'medicion_TempRetorno',
+                'tempRetorno',
                 'Temperatura Retorno',
-                'medicion_TempRetorno_observacion',
+                'tempRetornoObs',
               ),
               _buildMedicionField(
                 activoId,
-                'medicion_TempInyeccionCalor',
+                'tempInjeccionCalor',
                 'Temperatura Inyección Calor',
-                'medicion_TempInyeccionCalor_observacion',
+                'tempInjeccionCalorObs',
               ),
               _buildMedicionField(
                 activoId,
-                'medicion_SetPoint',
+                'setPoint',
                 'Set Point',
-                'medicion_SetPoint_observacion',
+                'setPointObs',
               ),
             ],
           ),
@@ -1044,10 +1223,10 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           _buildMedicionSection(
             'Consumo Compresor',
             [
-              _buildMedicionField(activoId, 'consumoCompresor_R', 'R'),
-              _buildMedicionField(activoId, 'consumoCompresor_S', 'S'),
-              _buildMedicionField(activoId, 'consumoCompresor_T', 'T'),
-              _buildMedicionField(activoId, 'consumoCompresor_N', 'N'),
+              _buildMedicionField(activoId, 'consumoCompresorR', 'R'),
+              _buildMedicionField(activoId, 'consumoCompresorS', 'S'),
+              _buildMedicionField(activoId, 'consumoCompresorT', 'T'),
+              _buildMedicionField(activoId, 'consumoCompresorN', 'N'),
             ],
           ),
           const SizedBox(height: 24),
@@ -1055,10 +1234,10 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           _buildMedicionSection(
             'Tensiones',
             [
-              _buildMedicionField(activoId, 'tension_R_S', 'R-S'),
-              _buildMedicionField(activoId, 'tension_S_T', 'S-T'),
-              _buildMedicionField(activoId, 'tension_T_R', 'T-R'),
-              _buildMedicionField(activoId, 'tension_T_N', 'T-N'),
+              _buildMedicionField(activoId, 'tensionRS', 'R-S'),
+              _buildMedicionField(activoId, 'tensionST', 'S-T'),
+              _buildMedicionField(activoId, 'tensionTR', 'T-R'),
+              _buildMedicionField(activoId, 'tensionTN', 'T-N'),
             ],
           ),
           const SizedBox(height: 24),
@@ -1066,8 +1245,8 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           _buildMedicionSection(
             'Presiones',
             [
-              _buildMedicionField(activoId, 'presiones_alta', 'Alta'),
-              _buildMedicionField(activoId, 'presiones_baja', 'Baja'),
+              _buildMedicionField(activoId, 'presionesAltas', 'Alta'),
+              _buildMedicionField(activoId, 'presionesBajas', 'Baja'),
             ],
           ),
         ],
@@ -1111,19 +1290,22 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             child: TextFormField(
               initialValue: parametrosValues[activoId]?[key] ?? '0',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              ),
-              onChanged: (value) {
+              onChanged: (value) async {
                 setState(() {
                   if (parametrosValues[activoId] == null) {
                     parametrosValues[activoId] = {};
                   }
                   parametrosValues[activoId]![key] = value;
                 });
+
+                // Guardar en DB local cada vez que cambia un valor
+                await _saveParametros(activoId);
               },
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
             ),
           ),
           if (observacionKey != null) ...[
@@ -1138,13 +1320,16 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 ),
-                onChanged: (value) {
+                onChanged: (value) async {
                   setState(() {
                     if (parametrosValues[activoId] == null) {
                       parametrosValues[activoId] = {};
                     }
                     parametrosValues[activoId]![observacionKey] = value;
                   });
+
+                  // Guardar en DB local cada vez que cambia una observación
+                  await _saveParametros(activoId);
                 },
               ),
             ),
@@ -1237,7 +1422,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
     for (var lista in widget.listasInspeccion) {
       for (var item in lista.items) {
         for (var subItem in item.subItems) {
-          if (subItemChecks[lista.id]?[subItem.id] == true) {
+          if (subItemChecks[item.id]?[subItem.id] == true) {
             completed++;
           }
         }
@@ -1322,109 +1507,123 @@ class _ChecklistClimaState extends State<ChecklistClima> {
   }
 
   Future<String> _uploadPhoto(
-      dynamic file, int visitId, int subItemId, String name) async {
+      String path, int visitId, int subItemId, String fileName) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-
-      var uri = Uri.parse(
-          '${ApiService.baseUrl}/upload/solicitudes/$visitId/$subItemId');
-      var request = http.MultipartRequest('POST', uri);
-
-      request.headers.addAll({
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      });
-
-      if (kIsWeb) {
-        var multipartFile = http.MultipartFile.fromBytes(
-          'file',
-          file as Uint8List,
-          filename: name,
+      var uri = Uri.parse('${ApiService.baseUrl}/visitas/$visitId/fotos');
+      var request = http.MultipartRequest('POST', uri)
+        ..fields['subitem_id'] = subItemId.toString()
+        ..files.add(await http.MultipartFile.fromPath(
+          'foto',
+          path,
+          filename: fileName,
           contentType: MediaType('image', 'jpeg'),
-        );
-        request.files.add(multipartFile);
-      } else {
-        var multipartFile = await http.MultipartFile.fromPath(
-          'file',
-          file as String,
-          contentType: MediaType('image', 'jpeg'),
-        );
-        request.files.add(multipartFile);
-      }
+        ));
 
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
+      var response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
-        var jsonResponse = json.decode(response.body);
-        String photoUrl = jsonResponse['url'] ?? '';
-
-        if (photoUrl.isNotEmpty) {
-          // Convertir URL relativa a absoluta si es necesario
-          if (photoUrl.startsWith('/')) {
-            photoUrl = '${ApiService.baseUrl}$photoUrl';
-          } else if (photoUrl.startsWith('http://localhost')) {
-            // Reemplazar localhost con la URL base
-            photoUrl = photoUrl.replaceFirst(
-                'http://localhost:3000', ApiService.baseUrl);
-          }
-
-          if (!subItemPhotosUrls.containsKey(subItemId)) {
-            subItemPhotosUrls[subItemId] = [];
-          }
-          subItemPhotosUrls[subItemId]!.add(photoUrl);
-          print('URL guardada para subItem $subItemId: $photoUrl');
-          return photoUrl;
-        } else {
-          throw Exception('URL de foto no encontrada en la respuesta');
-        }
+        var responseData = await response.stream.bytesToString();
+        var jsonResponse = jsonDecode(responseData);
+        return jsonResponse['url'];
       } else {
         throw Exception('Error al subir la foto: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error al subir la foto: $e');
+      print('Error subiendo foto: $e');
       throw e;
     }
   }
 
   Future<void> _finalizarVisita(String signature) async {
     try {
+      final db = LocalDatabase();
       Map<String, dynamic> payload = {
         'firma_cliente': signature,
         'repuestos': <String, dynamic>{},
-        'activoFijoRepuestos':
-            widget.visit.local.activoFijoLocales.map((activo) {
-          final repuestosActivo = subItemRepuestos[activo.id] ?? [];
-          return {
-            'id': activo.id,
-            'estadoOperativo': activoFijoEstados[activo.id] ?? 'funcionando',
-            'observacionesEstado': '',
-            'fechaRevision': DateTime.now().toIso8601String(),
-            'activoFijoId': activo.id,
-            'activoFijo': {
+        'activoFijoRepuestos': await Future.wait(
+          widget.visit.local.activoFijoLocales.map((activo) async {
+            // Obtener datos del checklist clima para este activo
+            final checklistData =
+                await db.getChecklistClimaData(activo.id, widget.visit.id);
+            final repuestosActivo = subItemRepuestos[activo.id] ?? {};
+
+            return {
               'id': activo.id,
-              'tipo_equipo': activo.tipoEquipo,
-              'marca': activo.marca,
-            },
-            'repuestos': repuestosActivo
-                .map((repuesto) => {
-                      'id': 1,
-                      'cantidad': repuesto.cantidad,
-                      'comentario': repuesto.comentario ?? '',
-                      'estado': 'pendiente',
-                      'precio_unitario': repuesto.repuesto.precio ?? 0,
-                      'repuesto': {
-                        'id': repuesto.repuesto.id,
-                        'nombre': repuesto.repuesto.articulo,
+              'estadoOperativo': activoFijoEstados[activo.id] ?? 'funcionando',
+              'observacionesEstado': '',
+              'fechaRevision': DateTime.now().toIso8601String(),
+              'activoFijoId': activo.id,
+              'activoFijo': {
+                'id': activo.id,
+                'tipo_equipo': activo.tipoEquipo,
+                'marca': activo.marca,
+              },
+              'repuestos': repuestosActivo.values.map((repuesto) => {
+                'id': 1,
+                'cantidad': repuesto.cantidad,
+                'comentario': repuesto.comentario ?? '',
+                'estado': 'pendiente',
+                'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
+                'repuesto': {
+                  'id': repuesto.repuesto.id,
+                  'nombre': repuesto.repuesto.articulo,
+                }
+              }).toList(),
+              // Agregar datos del checklist clima
+              'checklistClima': checklistData.isNotEmpty
+                  ? {
+                      'mediciones': {
+                        'setPoint': checklistData['medicion_SetPoint'],
+                        'tempInjeccionFrio':
+                            checklistData['medicion_TempInjeccionFrio'],
+                        'tempInjeccionCalor':
+                            checklistData['medicion_TempInjeccionCalor'],
+                        'tempAmbiente': checklistData['medicion_TempAmbiente'],
+                        'tempRetorno': checklistData['medicion_TempRetorno'],
+                        'tempExterior': checklistData['medicion_TempExterior'],
+                      },
+                      'observaciones': {
+                        'setPoint':
+                            checklistData['medicion_SetPoint_observacion'],
+                        'tempInjeccionFrio': checklistData[
+                            'medicion_TempInjeccionFrio_observacion'],
+                        'tempInjeccionCalor': checklistData[
+                            'medicion_TempInjeccionCalor_observacion'],
+                        'tempAmbiente':
+                            checklistData['medicion_TempAmbiente_observacion'],
+                        'tempRetorno':
+                            checklistData['medicion_TempRetorno_observacion'],
+                        'tempExterior':
+                            checklistData['medicion_TempExterior_observacion'],
+                      },
+                      'consumos': {
+                        'compresor': {
+                          'R': checklistData['consumoCompresor_R'],
+                          'S': checklistData['consumoCompresor_S'],
+                          'T': checklistData['consumoCompresor_T'],
+                          'N': checklistData['consumoCompresor_N'],
+                        },
+                        'total': {
+                          'R': checklistData['consumo_total_R'],
+                          'S': checklistData['consumo_total_S'],
+                          'T': checklistData['consumo_total_T'],
+                          'N': checklistData['consumo_total_N'],
+                        }
+                      },
+                      'tensiones': {
+                        'R_S': checklistData['tension_R_S'],
+                        'S_T': checklistData['tension_S_T'],
+                        'T_R': checklistData['tension_T_R'],
+                        'T_N': checklistData['tension_T_N'],
+                      },
+                      'presiones': {
+                        'altas': checklistData['presiones_altas'],
+                        'bajas': checklistData['presiones_bajas'],
                       }
-                    })
-                .toList()
-          };
-        }).toList()
+                    }
+                  : null
+            };
+          }),
+        )
       };
 
       // Agregar los items de inspección y sus repuestos
@@ -1445,8 +1644,8 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                 subItemStates[item.id]?[subItem.id] ?? CheckState.conforme);
 
             // Agregar fotos del subItem
-            if (subItemPhotosUrls[subItem.id]?.isNotEmpty ?? false) {
-              itemData['fotos'].addAll(subItemPhotosUrls[subItem.id] ?? []);
+            if (subItemPhotos[item.id]?[subItem.id]?.isNotEmpty ?? false) {
+              itemData['fotos'].addAll(subItemPhotos[item.id]![subItem.id]!);
             }
 
             // Agregar comentario si existe
@@ -1460,20 +1659,19 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             }
 
             // Agregar repuestos del subItem
-            if (subItemRepuestos[subItem.id]?.isNotEmpty ?? false) {
-              for (var repuesto in subItemRepuestos[subItem.id]!) {
-                itemData['repuestos'].add({
-                  'id': 1,
-                  'cantidad': repuesto.cantidad,
-                  'comentario': repuesto.comentario ?? '',
-                  'estado': 'pendiente',
-                  'precio_unitario': repuesto.repuesto.precio ?? 0,
-                  'repuesto': {
-                    'id': repuesto.repuesto.id,
-                    'nombre': repuesto.repuesto.articulo,
-                  }
-                });
-              }
+            if (subItemRepuestos[item.id]?[subItem.id] != null) {
+              final repuesto = subItemRepuestos[item.id]![subItem.id]!;
+              itemData['repuestos'].add({
+                'id': 1,
+                'cantidad': repuesto.cantidad,
+                'comentario': repuesto.comentario ?? '',
+                'estado': 'pendiente',
+                'precio_unitario': repuesto.repuesto.precio_venta ?? 0,
+                'repuesto': {
+                  'id': repuesto.repuesto.id,
+                  'nombre': repuesto.repuesto.articulo,
+                }
+              });
             }
           }
 
@@ -1489,9 +1687,19 @@ class _ChecklistClimaState extends State<ChecklistClima> {
           await ApiService.finalizarVisita(widget.visit.id, payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
-        }
+        // Eliminar la solicitud de la base de datos local
+        await db.deleteSolicitudVisita(widget.visit.id);
+
+        // Mostrar mensaje de éxito
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Visita finalizada exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Navegar de vuelta
+        Navigator.of(context).pop();
       } else {
         print('Error response: ${response.body}');
         throw Exception('Error al finalizar la visita: ${response.statusCode}');
@@ -1597,5 +1805,399 @@ class _ChecklistClimaState extends State<ChecklistClima> {
             state == CheckState.noAplica ? Colors.orange : Colors.green,
       ),
     );
+  }
+
+  Future<void> _saveParametros(int activoFijoId) async {
+    try {
+      final db = LocalDatabase();
+      final parametros = parametrosValues[activoFijoId];
+
+      if (parametros == null) return;
+
+      final data = {
+        'activoFijoId': activoFijoId,
+        'solicitarVisitaId': widget.visit.id,
+        'medicion_SetPoint': parametros['setPoint'],
+        'medicion_TempInjeccionFrio': parametros['tempInjeccionFrio'],
+        'medicion_TempInjeccionCalor': parametros['tempInjeccionCalor'],
+        'medicion_TempAmbiente': parametros['tempAmbiente'],
+        'medicion_TempRetorno': parametros['tempRetorno'],
+        'medicion_TempExterior': parametros['tempExterior'],
+        'medicion_SetPoint_observacion': parametros['setPointObs'],
+        'medicion_TempInjeccionFrio_observacion':
+            parametros['tempInjeccionFrioObs'],
+        'medicion_TempInjeccionCalor_observacion':
+            parametros['tempInjeccionCalorObs'],
+        'medicion_TempAmbiente_observacion': parametros['tempAmbienteObs'],
+        'medicion_TempRetorno_observacion': parametros['tempRetornoObs'],
+        'medicion_TempExterior_observacion': parametros['tempExteriorObs'],
+        'consumoCompresor_R': parametros['consumoCompresorR'],
+        'consumoCompresor_S': parametros['consumoCompresorS'],
+        'consumoCompresor_T': parametros['consumoCompresorT'],
+        'consumoCompresor_N': parametros['consumoCompresorN'],
+        'tension_R_S': parametros['tensionRS'],
+        'tension_S_T': parametros['tensionST'],
+        'tension_T_R': parametros['tensionTR'],
+        'tension_T_N': parametros['tensionTN'],
+        'consumo_total_R': parametros['consumoTotalR'],
+        'consumo_total_S': parametros['consumoTotalS'],
+        'consumo_total_T': parametros['consumoTotalT'],
+        'consumo_total_N': parametros['consumoTotalN'],
+        'presiones_altas': parametros['presionesAltas'],
+        'presiones_bajas': parametros['presionesBajas'],
+      };
+
+      await db.saveChecklistClima(data);
+      print('Datos guardados para activo $activoFijoId');
+    } catch (e) {
+      print('Error guardando parámetros: $e');
+    }
+  }
+
+  // Llamar a esta función cuando cambien los valores
+  void _onParametroChanged(int activoFijoId, String key, String value) {
+    setState(() {
+      if (parametrosValues[activoFijoId] == null) {
+        parametrosValues[activoFijoId] = {};
+      }
+      parametrosValues[activoFijoId]![key] = value;
+    });
+    _saveParametros(activoFijoId);
+  }
+
+  Future<void> _showCommentDialog(int subItemId) async {
+    final TextEditingController commentController = TextEditingController(
+      text: subItemComments[subItemId] ?? '',
+    );
+    final db = LocalDatabase();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Agregar Comentario'),
+        content: TextField(
+          controller: commentController,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Escriba su comentario aquí...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final comment = commentController.text.trim();
+
+              // Actualizar el estado local
+              setState(() {
+                if (comment.isEmpty) {
+                  subItemComments.remove(subItemId);
+                } else {
+                  subItemComments[subItemId] = comment;
+                }
+              });
+
+              // Actualizar la base de datos local usando la función existente
+              try {
+                await db.updateComentario(subItemId, comment);
+                print(
+                    'Comentario actualizado en DB local para subItemId: $subItemId');
+              } catch (e) {
+                print('Error actualizando comentario en DB local: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error guardando comentario: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+
+              if (mounted) {
+                Navigator.pop(context);
+              }
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3F3FFF),
+            ),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRepuestosDialog(int subItemId) async {
+    if (repuestos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: No hay repuestos disponibles')),
+      );
+      return;
+    }
+
+    final db = LocalDatabase();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Agregar Repuesto'),
+        content: StatefulBuilder(
+          builder: (context, setState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: repuestos!.map((repuesto) {
+                  final isSelected = subItemRepuestos[currentActivoFijoId]?[subItemId]?.containsKey(int.parse(repuesto.id)) ?? false;
+                  final selectedRepuesto = isSelected 
+                    ? subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]
+                    : null;
+
+                  return Column(
+                    children: [
+                      ListTile(
+                        title: Text(repuesto.articulo),
+                        subtitle: Text('Precio: \$${repuesto.precio_venta}'),
+                        trailing: isSelected
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove),
+                                  onPressed: () {
+                                    setState(() {
+                                      final currentRepuesto = subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]!;
+                                      if (currentRepuesto.cantidad > 1) {
+                                        currentRepuesto.cantidad--;
+                                        _updateRepuestoInDB(subItemId, currentRepuesto, db);
+                                      } else {
+                                        subItemRepuestos[currentActivoFijoId]![subItemId] = null;
+                                      }
+                                    });
+                                  },
+                                ),
+                                Text('${selectedRepuesto?.cantidad ?? 0}'),
+                                IconButton(
+                                  icon: const Icon(Icons.add),
+                                  onPressed: () {
+                                    setState(() {
+                                      final currentRepuesto = subItemRepuestos[currentActivoFijoId]![subItemId]![int.parse(repuesto.id)]!;
+                                      currentRepuesto.cantidad++;
+                                    });
+                                  },
+                                ),
+                              ],
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.add),
+                              onPressed: () {
+                                final newRepuesto = RepuestoAsignado(
+                                  repuesto: repuesto,
+                                  cantidad: 1,
+                                );
+                                setState(() {
+                                  if (subItemRepuestos[currentActivoFijoId] == null) {
+                                    subItemRepuestos[currentActivoFijoId] = {};
+                                  }
+                                  subItemRepuestos[currentActivoFijoId]![subItemId] = newRepuesto;
+                                });
+                                _saveRepuestoToDB(subItemId, newRepuesto, db);
+                              },
+                            ),
+                        ),
+                        if (isSelected)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: TextField(
+                              decoration: const InputDecoration(
+                                labelText: 'Comentario',
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (value) {
+                                setState(() {
+                                  selectedRepuesto!.comentario = value;
+                                });
+                                _updateRepuestoInDB(subItemId, selectedRepuesto!, db);
+                              },
+                              controller: TextEditingController(text: selectedRepuesto?.comentario ?? ''),
+                            ),
+                          ),
+                        const Divider(),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Funciones auxiliares para manejar la persistencia
+  Future<void> _saveRepuestoToDB(
+    int itemId,
+    RepuestoAsignado repuesto,
+    LocalDatabase db,
+  ) async {
+    if (currentActivoFijoId == null) return;
+
+    try {
+      await db.insertRepuesto(
+        itemId,
+        repuesto.repuesto,
+        repuesto.cantidad,
+        widget.visit.id,
+        activoFijoId: currentActivoFijoId,
+      );
+
+      setState(() {
+        if (subItemRepuestos[currentActivoFijoId!] == null) {
+          subItemRepuestos[currentActivoFijoId!] = {};
+        }
+        subItemRepuestos[currentActivoFijoId!]![itemId] = repuesto;
+      });
+    } catch (e) {
+      print('Error guardando repuesto en DB: $e');
+    }
+  }
+
+  Future<void> _updateRepuestoInDB(
+    int itemId,
+    RepuestoAsignado repuesto,
+    LocalDatabase db,
+  ) async {
+    try {
+      await db.actualizarCantidadRepuesto(
+        itemId,
+        repuesto.repuesto.id,
+        widget.visit.id,
+        repuesto.cantidad,
+      );
+    } catch (e) {
+      print('Error actualizando repuesto en DB: $e');
+    }
+  }
+
+  /* Future<void> _deleteRepuestoFromDB(
+    int itemId,
+    int repuestoId,
+    LocalDatabase db,
+  ) async {
+    try {
+      await db.deleteRepuesto(
+        itemId,
+        repuestoId,
+        widget.visit.id,
+      );
+    } catch (e) {
+      print('Error eliminando repuesto de DB: $e');
+    }
+  } */
+
+  Future<void> _updateItemState(
+      int activoId, int itemId, CheckState newState) async {
+    try {
+      final db = LocalDatabase();
+      String estadoStr;
+      switch (newState) {
+        case CheckState.conforme:
+          estadoStr = 'conforme';
+          break;
+        case CheckState.noConforme:
+          estadoStr = 'noConforme';
+          break;
+        case CheckState.noAplica:
+          estadoStr = 'noAplica';
+          break;
+      }
+
+      await db.changeEstado(
+        itemId,
+        estadoStr,
+        widget.visit.id,
+        activoFijoId: currentActivoFijoId,
+      );
+
+      setState(() {
+        if (subItemStates[activoId] == null) {
+          subItemStates[activoId] = {};
+        }
+        subItemStates[activoId]![itemId] = newState;
+      });
+    } catch (e) {
+      print('Error actualizando estado: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error guardando estado: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _onActivoFijoSelected(int activoFijoId) {
+    setState(() {
+      currentActivoFijoId = activoFijoId;
+    });
+    _loadChecklistData(activoFijoId);
+  }
+
+  Future<void> _loadChecklistData(int activoFijoId) async {
+    try {
+      final db = LocalDatabase();
+      final data =
+          await db.getChecklistClimaData(activoFijoId, widget.visit.id);
+
+      setState(() {
+        parametrosValues[activoFijoId] = {
+          'setPoint': data['medicion_SetPoint'] ?? '0',
+          'tempInjeccionFrio': data['medicion_TempInjeccionFrio'] ?? '0',
+          'tempInjeccionCalor': data['medicion_TempInjeccionCalor'] ?? '0',
+          'tempAmbiente': data['medicion_TempAmbiente'] ?? '0',
+          'tempRetorno': data['medicion_TempRetorno'] ?? '0',
+          'tempExterior': data['medicion_TempExterior'] ?? '0',
+          'setPointObs': data['medicion_SetPoint_observacion'] ?? '',
+          'tempInjeccionFrioObs':
+              data['medicion_TempInjeccionFrio_observacion'] ?? '',
+          'tempInjeccionCalorObs':
+              data['medicion_TempInjeccionCalor_observacion'] ?? '',
+          'tempAmbienteObs': data['medicion_TempAmbiente_observacion'] ?? '',
+          'tempRetornoObs': data['medicion_TempRetorno_observacion'] ?? '',
+          'tempExteriorObs': data['medicion_TempExterior_observacion'] ?? '',
+          'consumoCompresorR': data['consumoCompresor_R'] ?? '0',
+          'consumoCompresorS': data['consumoCompresor_S'] ?? '0',
+          'consumoCompresorT': data['consumoCompresor_T'] ?? '0',
+          'consumoCompresorN': data['consumoCompresor_N'] ?? '0',
+          'tensionRS': data['tension_R_S'] ?? '0',
+          'tensionST': data['tension_S_T'] ?? '0',
+          'tensionTR': data['tension_T_R'] ?? '0',
+          'tensionTN': data['tension_T_N'] ?? '0',
+          'consumoTotalR': data['consumo_total_R'] ?? '0',
+          'consumoTotalS': data['consumo_total_S'] ?? '0',
+          'consumoTotalT': data['consumo_total_T'] ?? '0',
+          'consumoTotalN': data['consumo_total_N'] ?? '0',
+          'presionesAltas': data['presiones_altas'] ?? '0',
+          'presionesBajas': data['presiones_bajas'] ?? '0',
+        };
+      });
+    } catch (e) {
+      print('Error cargando datos del checklist: $e');
+    }
+  }
+
+  bool _hasRepuestos(int subItemId, int activoId) {
+    return (subItemRepuestos[activoId]?[subItemId]?.isNotEmpty ?? false);
   }
 }

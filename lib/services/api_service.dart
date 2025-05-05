@@ -1,12 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiService {
-  // Usa la IP de tu computadora (la puedes obtener con ipconfig en Windows o ifconfig en Mac/Linux)
-  // static const String baseUrl =
-  ////  'http://138.255.103.35:3000'; // URL de producción
-  static const String baseUrl = 'http://localhost:3000'; // URL de desarrollo
+  static String get baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:3000'; // Web and other platforms
+    } else {
+      return 'http://10.0.2.2:3000'; // Android emulator localhost
+    }
+  }
+
+  static const int timeoutDuration = 10; // segundos
 
   Future<Map<String, String>> get _headers async {
     final prefs = await SharedPreferences.getInstance();
@@ -40,25 +48,51 @@ class ApiService {
   // Método POST genérico
   Future<dynamic> post(String endpoint, Map<String, dynamic> data) async {
     try {
-      print('Calling: $baseUrl/$endpoint');
-      print('Data: $data');
+      print('Iniciando POST request a: $baseUrl/$endpoint');
 
-      final response = await http.post(
+      final headers = endpoint == 'auth/login_tecnico'
+          ? {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            }
+          : await _headers;
+
+      print('Headers: $headers');
+      print('Body: ${jsonEncode(data)}');
+
+      final response = await http
+          .post(
         Uri.parse('$baseUrl/$endpoint'),
-        headers: await _headers,
+        headers: headers,
         body: jsonEncode(data),
+      )
+          .timeout(
+        const Duration(seconds: timeoutDuration),
+        onTimeout: () {
+          throw TimeoutException('La conexión tardó demasiado');
+        },
       );
 
-      print('Response status: ${response.statusCode}');
+      print('Response status code: ${response.statusCode}');
       print('Response body: ${response.body}');
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decodedResponse = jsonDecode(response.body);
+        print('Respuesta decodificada: $decodedResponse');
+        return decodedResponse;
       } else {
-        throw Exception('Error ${response.statusCode}: ${response.body}');
+        throw HttpException('Error ${response.statusCode}: ${response.body}');
       }
+    } on TimeoutException {
+      print('Error: Timeout de conexión');
+      throw Exception(
+          'No se pudo conectar al servidor. Por favor, verifica tu conexión.');
+    } on SocketException catch (e) {
+      print('Error de Socket: $e');
+      throw Exception(
+          'No se pudo conectar al servidor. Verifica que el servidor esté funcionando.');
     } catch (e) {
-      print('Error details: $e');
+      print('Error detallado en POST request: $e');
       throw Exception('Error de conexión: $e');
     }
   }

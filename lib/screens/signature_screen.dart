@@ -78,6 +78,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                     }
                     final signature = await _controller.toPngBytes();
                     if (signature != null) {
+                      print('Guardando firma...'); // Debug print
                       final String base64Signature =
                           'data:image/png;base64,${base64Encode(signature)}';
                       if (context.mounted) {

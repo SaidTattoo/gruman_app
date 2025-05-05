@@ -74,20 +74,25 @@ class Item {
 
 class SubItem {
   final int id;
+  final int itemId;
   final String name;
   final bool fotoObligatoria;
   final bool disabled;
 
   SubItem({
     required this.id,
+    required this.itemId,
     required this.name,
     required this.fotoObligatoria,
     this.disabled = false,
   });
 
   factory SubItem.fromJson(Map<String, dynamic> json) {
+    final itemId = json['item_id'] ?? json['itemId'] ?? json['id'];
+
     return SubItem(
       id: json['id'],
+      itemId: itemId,
       name: json['name'],
       fotoObligatoria: json['foto_obligatoria'] ?? false,
       disabled: json['disabled'] ?? false,

@@ -13,6 +13,8 @@ class ChecklistJsonStorageService {
 
   ChecklistJsonStorageService._();
 
+  static const String _keyPrefix = 'checklist_clima_';
+
   Future<void> saveChecklistData(Map<String, dynamic> data) async {
     if (kIsWeb) {
       // En web, usar SharedPreferences
@@ -206,5 +208,59 @@ class ChecklistJsonStorageService {
       print('Error inicializando base de datos: $e');
       throw Exception('Error inicializando base de datos: $e');
     }
+  }
+
+  Future<void> saveChecklistState(
+      int visitId, Map<String, dynamic> state) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '${_keyPrefix}${visitId}';
+
+      // Estructura completa del estado
+      final completeState = {
+        'timestamp': DateTime.now().toIso8601String(),
+        'visit_id': visitId,
+        'checks': state['checks'],
+        'states': state['states'],
+        'parametros': state['parametros'],
+        'checklist_data': {
+          'repuestos': state['repuestos'] ?? {},
+          'fotos': state['fotos'] ?? {},
+          'observaciones': state['observaciones'] ?? {},
+          'subitem_states': state['subitem_states'] ?? {},
+        }
+      };
+
+      await prefs.setString(key, jsonEncode(completeState));
+      print(
+          'Estado guardado para visita $visitId: ${jsonEncode(completeState)}');
+    } catch (e) {
+      print('Error guardando estado: $e');
+      throw Exception('Error guardando estado: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getChecklistState(int visitId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '${_keyPrefix}${visitId}';
+      final data = prefs.getString(key);
+
+      if (data != null) {
+        final decodedData = jsonDecode(data) as Map<String, dynamic>;
+        print('Estado recuperado para visita $visitId: $decodedData');
+        return decodedData;
+      }
+      return null;
+    } catch (e) {
+      print('Error recuperando estado: $e');
+      throw Exception('Error recuperando estado: $e');
+    }
+  }
+
+  Future<void> clearChecklistState(int visitId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '${_keyPrefix}${visitId}';
+    await prefs.remove(key);
   }
 }

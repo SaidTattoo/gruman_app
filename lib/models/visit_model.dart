@@ -175,4 +175,19 @@ class Visit {
     };
     return tiposServicio[id] ?? 'No especificado';
   }
+
+  Visit copyWith({
+    DateTime? fechaHoraInicioServicio,
+  }) {
+    return Visit(
+      id: id,
+      fechaVisita: fechaVisita,
+      tipoMantenimiento: tipoMantenimiento,
+      status: status,
+      local: local,
+      client: client,
+      fechaHoraInicioServicio:
+          fechaHoraInicioServicio ?? this.fechaHoraInicioServicio,
+    );
+  }
 }

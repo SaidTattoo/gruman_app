@@ -11,6 +11,7 @@ import '../models/visit_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/api_service.dart';
+import '../DB/LocalDB.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserModel userData;
@@ -27,6 +28,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   late final List<Widget> _screens;
+  bool _isSyncing = false;
+  final _apiService = ApiService();
 
   @override
   void initState() {
@@ -66,35 +69,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onItemTapped(int index) {
+  void _onItemTapped(int index) async {
     if (index == 2) {
-      // Mostrar diálogo de confirmación para salir
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Cerrar Sesión'),
-            content: const Text('¿Estás seguro que deseas salir?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Cerrar el diálogo
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const LoginScreen()),
-                  );
-                },
-                child: const Text('Salir'),
-              ),
-            ],
-          );
-        },
-      );
+      // Índice del botón de sincronización
+      await _syncData();
+    } else if (index == 3) {
+      // Índice del botón salir
+      _showLogoutDialog();
     } else {
       setState(() {
         _selectedIndex = index;
@@ -104,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print(
+        'Building HomeScreen with userData: ${widget.userData}'); // Debug print
     if (_screens.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -123,24 +106,140 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Perfil',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Visitas',
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.list),
+            label: 'Solicitudes',
           ),
           BottomNavigationBarItem(
+            icon: Stack(
+              children: [
+                const Icon(Icons.sync),
+                if (_isSyncing)
+                  const Positioned(
+                    right: 0,
+                    child: SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            label: 'Sincronizar',
+          ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.exit_to_app),
             label: 'Salir',
           ),
         ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: const Color(0xFF3F3FFF),
-        onTap: _onItemTapped,
       ),
+    );
+  }
+
+  Future<void> _syncData() async {
+    if (_isSyncing) return;
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwtToken');
+      if (token == null) throw Exception('No hay token de autenticación');
+
+      final decodedToken = JwtDecoder.decode(token);
+      final tecnicoRut = decodedToken['rut'];
+
+      // Eliminar todas las solicitudes existentes
+      final db = LocalDatabase();
+      await db.deleteAllSolicitudes();
+      print('Solicitudes eliminadas de DB local');
+
+      // Esperar un momento para asegurar que la DB está limpia
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Obtener datos nuevos del API
+      final data =
+          await _apiService.get('solicitar-visita/tecnico/$tecnicoRut');
+      print('Nuevos datos obtenidos del API: ${data.length} solicitudes');
+
+      // Guardar nuevos datos en DB local
+      for (var solicitud in data) {
+        await db.insertSolicitud(jsonEncode(solicitud));
+      }
+      print('Nuevas solicitudes guardadas en DB local');
+
+      // Recargar la vista de solicitudes
+      if (_selectedIndex == 1) {
+        setState(() {
+          _screens[1] = const VisitsScreen();
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sincronización completada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error en sincronización: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al sincronizar'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+      }
+    }
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cerrar Sesión'),
+          content: const Text('¿Estás seguro que deseas salir?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                );
+              },
+              child: const Text('Salir'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -514,6 +613,7 @@ class _VisitsScreenState extends State<VisitsScreen> {
     }
 
     try {
+      print('Iniciando carga de visitas...');
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('jwtToken');
 
@@ -524,6 +624,34 @@ class _VisitsScreenState extends State<VisitsScreen> {
       final decodedToken = JwtDecoder.decode(token);
       final tecnicoRut = decodedToken['rut'];
 
+      List<Visit> localVisits = [];
+      try {
+        print('Obteniendo solicitudes de DB local...');
+        final db = LocalDatabase();
+        final solicitudesJson = await db.getSolicitudes();
+        print('Solicitudes de DB local: ${solicitudesJson.length}');
+
+        localVisits =
+            solicitudesJson.map((json) => Visit.fromJson(json)).toList();
+        print('Visitas parseadas de DB local: ${localVisits.length}');
+      } catch (dbError) {
+        print('Error leyendo DB local: $dbError');
+      }
+
+      // Si hay visitas locales, usarlas
+      if (localVisits.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            visits = localVisits;
+            filteredVisits = visits;
+            isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Si no hay visitas locales, obtener del API
+      print('Obteniendo datos del API...');
       final data =
           await _apiService.get('solicitar-visita/tecnico/$tecnicoRut');
 
@@ -595,132 +723,198 @@ class _VisitsScreenState extends State<VisitsScreen> {
                       },
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
-                        itemCount: filteredVisits.length, // Usar lista filtrada
+                        itemCount: filteredVisits.length,
                         itemBuilder: (context, index) {
-                          final visit =
-                              filteredVisits[index]; // Usar lista filtrada
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                          final visit = filteredVisits[index];
+                          return Dismissible(
+                            key: Key(visit.id.toString()),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              color: Colors.red,
+                              child:
+                                  const Icon(Icons.delete, color: Colors.white),
                             ),
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        VisitDetailScreen(visit: visit),
-                                  ),
-                                ).then((_) {
-                                  // Recargar la lista de visitas cuando regresamos
-                                  _loadVisits();
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(16),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Numero de requerimiento: ${visit.id}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey,
-                                              ),
-                                            ),
-                                            Text(
-                                              visit.local.nombreLocal,
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${visit.client['nombre']}',
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.grey,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        _buildStatusChip(visit.status ?? ''),
-                                      ],
+                            confirmDismiss: (direction) async {
+                              return await showDialog(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return AlertDialog(
+                                    title: const Text('Confirmar eliminación'),
+                                    content: const Text(
+                                        '¿Estás seguro de eliminar esta solicitud?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: const Text('Cancelar'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: const Text('Eliminar'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                            onDismissed: (direction) async {
+                              try {
+                                await LocalDatabase().deleteSolicitud(visit.id);
+                                // Recargar las visitas después de eliminar
+                                await _loadVisits();
+
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Solicitud ${visit.id} eliminada'),
+                                      backgroundColor: Colors.green,
                                     ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.location_on_outlined,
-                                            size: 16, color: Colors.grey),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            visit.local.direccion,
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 14,
+                                  );
+                                }
+                              } catch (e) {
+                                print('Error al eliminar: $e');
+                                // Recargar las visitas incluso si hay error
+                                await _loadVisits();
+
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Error al eliminar la solicitud'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: Card(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          VisitDetailScreen(visit: visit),
+                                    ),
+                                  ).then((_) {
+                                    // Recargar la lista de visitas cuando regresamos
+                                    _loadVisits();
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(16),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Numero de requerimiento: ${visit.id}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Text(
+                                                visit.local.nombreLocal,
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Text(
+                                                '${visit.client['nombre']}',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          _buildStatusChip(visit.status ?? ''),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on_outlined,
+                                              size: 16, color: Colors.grey),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              visit.local.direccion,
+                                              style: const TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 14,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Row(
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.directions_car,
-                                                color: Color(0xFF3F3FFF),
-                                                size: 24,
+                                          Row(
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.directions_car,
+                                                  color: Color(0xFF3F3FFF),
+                                                  size: 24,
+                                                ),
+                                                onPressed: () => _openInWaze(
+                                                    visit.local.direccion),
+                                                tooltip: 'Abrir en Waze',
                                               ),
-                                              onPressed: () => _openInWaze(
-                                                  visit.local.direccion),
-                                              tooltip: 'Abrir en Waze',
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.map,
-                                                color: Color(0xFF3F3FFF),
-                                                size: 24,
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.map,
+                                                  color: Color(0xFF3F3FFF),
+                                                  size: 24,
+                                                ),
+                                                onPressed: () =>
+                                                    _openInGoogleMaps(
+                                                        visit.local.direccion),
+                                                tooltip: 'Abrir en Google Maps',
                                               ),
-                                              onPressed: () =>
-                                                  _openInGoogleMaps(
-                                                      visit.local.direccion),
-                                              tooltip: 'Abrir en Google Maps',
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        /*  _buildInfoChip(
-                                          Icons.calendar_today,
-                                          _formatDate(visit.fechaVisita ??
-                                              DateTime.now()),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        _buildInfoChip(
-                                          Icons.access_time,
-                                          _formatTime(visit.fechaVisita ??
-                                              DateTime.now()),
-                                        ), */
-                                        const SizedBox(width: 8),
-                                        _buildInfoChip(
-                                          Icons.engineering,
-                                          visit.tipoMantenimiento ?? '',
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          /*  _buildInfoChip(
+                                            Icons.calendar_today,
+                                            _formatDate(visit.fechaVisita ??
+                                                DateTime.now()),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          _buildInfoChip(
+                                            Icons.access_time,
+                                            _formatTime(visit.fechaVisita ??
+                                                DateTime.now()),
+                                          ), */
+                                          const SizedBox(width: 8),
+                                          _buildInfoChip(
+                                            Icons.engineering,
+                                            visit.tipoMantenimiento ?? '',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
