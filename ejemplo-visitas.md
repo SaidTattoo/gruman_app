@@ -562,3 +562,753 @@
         "estado": true
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EJEMPLO SIN CLIMA 
+
+
+{
+    "id": 186,
+    "tipo_mantenimiento": "programado",
+    "tipoServicioId": 3,
+    "tipoSolicitud": null,
+    "sectorTrabajoId": 1,
+    "especialidad": null,
+    "fechaIngreso": "2025-04-21T08:00:00.000Z",
+    "ticketGruman": "186",
+    "observaciones": "cambio llave lavadero, Local revisión general operativo ",
+    "status": "reabierta",
+    "valorPorLocal": "0.00",
+    "imagenes": null,
+    "fechaVisita": "2025-04-21T08:00:29.000Z",
+    "tecnico_asignado_id": 42,
+    "tecnico_asignado_id_2": null,
+    "observacion_rechazo": null,
+    "fecha_hora_inicio_servicio": "2025-04-21T21:11:18.000Z",
+    "fecha_hora_fin_servicio": "2025-04-21T21:30:03.000Z",
+    "firma_cliente": "data:image/png;base64,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",
+    "latitud_movil": "-33.4635114",
+    "longitud_movil": "-70.6416907",
+    "aprobada_por_id": 9999,
+    "fecha_hora_aprobacion": null,
+    "rechazada_por_id": null,
+    "validada_por_id": 83,
+    "reabierta_por_id": null,
+    "generada_por_id": 9999,
+    "fecha_hora_validacion": "2025-04-22T00:33:25.000Z",
+    "registroVisita": "156102",
+    "estado": true,
+    "causaRaizId": 7,
+    "facturacion_id": 8,
+    "garantia": null,
+    "turno": null,
+    "estado_solicitud": null,
+    "image_ot": null,
+    "activo_fijo_id": null,
+    "local": {
+        "id": 4779,
+        "direccion": "Av. Alemania N 671, Local 1002, Mall Jumbo",
+        "nombre_local": "372",
+        "zona": "A",
+        "grupo": "A",
+        "referencia": "",
+        "telefono": "982098577",
+        "email_local": "F_CV372@farmacruzverde.cl",
+        "email_encargado": "erodriguez@femsasalud.com",
+        "nombre_encargado": "Erwin Rodriguez",
+        "latitud": "0.00000000",
+        "longitud": "0.00000000",
+        "sobreprecio": "0.00",
+        "valorPorLocal": "0.00",
+        "numeroLocal": "372",
+        "deleted": false,
+        "activoFijoLocales": []
+    },
+    "client": {
+        "id": 6,
+        "nombre": "Cruz Verde",
+        "rut": "444444444",
+        "razonSocial": "Cruz Verde SPA",
+        "logo": "http://138.255.103.35:3000/uploads/clientes/1738785075151-cruz verde.png",
+        "sobreprecio": "3.00",
+        "valorPorLocal": 2,
+        "fechaAlta": "2025-02-05T22:51:22.000Z",
+        "activo": true,
+        "deleted": false,
+        "listaInspeccion": [
+            {
+                "id": 4,
+                "name": "CHECK LIST PARA TRABAJOS RELACIONADOS CON OBRAS CIVILES",
+                "disabled": false,
+                "items": [
+                    {
+                        "id": 2,
+                        "name": "Inspección acceso",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 2,
+                                "name": "Revisión de letreros luminosos",
+                                "disabled": false
+                            },
+                            {
+                                "id": 3,
+                                "name": "Revisión de cortinas metalicas (engrasar si requiere y revisar funcionamiento)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 14,
+                                "name": "Revisión de ramplas y/o escaleras accesos (ceramicos, porcelanatos, cintas antideslizante)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 15,
+                                "name": "Revisión de iluminación perimetral y exterior del local (estacionamientos)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 16,
+                                "name": "Revisión de demarcación de estacionamientos y estado de los topes para automoviles",
+                                "disabled": false
+                            },
+                            {
+                                "id": 17,
+                                "name": "Estado de del pavimento del estacionamiento (informar si existe riesgo para los clientes)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 18,
+                                "name": "Revisión de operatividad y estado de los candados de seguridad y chapas",
+                                "disabled": false
+                            },
+                            {
+                                "id": 19,
+                                "name": "Revisar operatividad de chapas, herrajes, quicios y manillones en puertas protex u de acceso al local",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 17,
+                        "name": "Inspección sala",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 22,
+                                "name": "Inspección de acrilicos y vidrios en muebles de exhibición",
+                                "disabled": false
+                            },
+                            {
+                                "id": 23,
+                                "name": "Inspección chapas y bisagras de muebles de exhibición",
+                                "disabled": false
+                            },
+                            {
+                                "id": 24,
+                                "name": "Revisión de puertas correderas",
+                                "disabled": false
+                            },
+                            {
+                                "id": 25,
+                                "name": "Inspección luminaria de muebles de exhibición",
+                                "disabled": false
+                            },
+                            {
+                                "id": 26,
+                                "name": "Inspección de cajones de muebles en sala de venta",
+                                "disabled": false
+                            },
+                            {
+                                "id": 27,
+                                "name": "Inspección luminaria sala",
+                                "disabled": false
+                            },
+                            {
+                                "id": 28,
+                                "name": "Inspección de pintura en sala de ventas",
+                                "disabled": false
+                            },
+                            {
+                                "id": 29,
+                                "name": "Inspección de ceramicos, porcelanatos, piso en sala de ventas.",
+                                "disabled": false
+                            },
+                            {
+                                "id": 30,
+                                "name": "Inspección de palmetas de cielo falso",
+                                "disabled": false
+                            },
+                            {
+                                "id": 31,
+                                "name": "Inspección de elementos de riesgo que puedan obstaculizar el transito de los clientes y producir caídas",
+                                "disabled": false
+                            },
+                            {
+                                "id": 32,
+                                "name": "Revisión de repisas de vidrio",
+                                "disabled": false
+                            },
+                            {
+                                "id": 33,
+                                "name": "Inspección de BOX de atención (llave monomando, flexibles, luminaria, pintura, muebles)",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 18,
+                        "name": "Inspección mueble POS y/o zona de cajas",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 34,
+                                "name": "Revisión de cubierta mueble POS y/o mesón de atención clientes",
+                                "disabled": false
+                            },
+                            {
+                                "id": 35,
+                                "name": "Revisión de tiradores, chapas, embellecedores, rieles telescopicos, tornillos",
+                                "disabled": false
+                            },
+                            {
+                                "id": 36,
+                                "name": "Revisar estado de pulsadores turnomaticos",
+                                "disabled": false
+                            },
+                            {
+                                "id": 37,
+                                "name": "Revisar interruptores y toma corrientes",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 19,
+                        "name": "Inspección baño clientes",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 38,
+                                "name": "Inspección de fluxometro y vaciado de estanque",
+                                "disabled": false
+                            },
+                            {
+                                "id": 39,
+                                "name": "Inspección de llenado de estanque",
+                                "disabled": false
+                            },
+                            {
+                                "id": 40,
+                                "name": "Inspección luminaria",
+                                "disabled": false
+                            },
+                            {
+                                "id": 41,
+                                "name": "Inspección de flexibles, desagües, llave monomando, sellos de silicona y llaves de paso",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 20,
+                        "name": "Inspección trastienda",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 42,
+                                "name": "Inspección de luminaria",
+                                "disabled": false
+                            },
+                            {
+                                "id": 43,
+                                "name": "Inspección de cielo falso, muros y estado de pintura",
+                                "disabled": false
+                            },
+                            {
+                                "id": 44,
+                                "name": "Inspección de piso de trastienda, ceramicos, porcelanatos",
+                                "disabled": false
+                            },
+                            {
+                                "id": 45,
+                                "name": "Inspección de vestidores (colgadores, luminaria, piso)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 46,
+                                "name": "Inspección baños (llave monomando, flapper, flexibles, sellos silicona, luminaria, sifon, desagüe)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 47,
+                                "name": "Inspección oficina jefe local o QF (luminaria, cajones, rieles, muebles, tiradores,chapas)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 48,
+                                "name": "Inspección bodega (luminaria)",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 21,
+                        "name": "Inspección comedor funcionarios",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 49,
+                                "name": "Revisión de mueble lavaplatos (estado de melaminas, puertas, bisagras, llave monomando, flexibles)",
+                                "disabled": false
+                            },
+                            {
+                                "id": 50,
+                                "name": "Inspección de muros, piso, ceramicos.",
+                                "disabled": false
+                            },
+                            {
+                                "id": 51,
+                                "name": "Inspección luminarias",
+                                "disabled": false
+                            },
+                            {
+                                "id": 52,
+                                "name": "Inspección de enchufes y tomacorrientes",
+                                "disabled": false
+                            }
+                        ]
+                    },
+                    {
+                        "id": 32,
+                        "name": "Cortinas",
+                        "disabled": false,
+                        "subItems": [
+                            {
+                                "id": 119,
+                                "name": "Inspección de motor",
+                                "disabled": false
+                            },
+                            {
+                                "id": 120,
+                                "name": "Engrasar rieles",
+                                "disabled": false
+                            },
+                            {
+                                "id": 121,
+                                "name": "Revisar aldabas y candados",
+                                "disabled": false
+                            },
+                            {
+                                "id": 122,
+                                "name": "Limpia contacto en circuito eléctrico",
+                                "disabled": false
+                            },
+                            {
+                                "id": 123,
+                                "name": "Estado de puerta en cortina",
+                                "disabled": false
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "clima": false
+    },
+    "checklistsClima": [],
+    "tecnico_asignado": {
+        "id": 42,
+        "name": "Mauricio",
+        "lastName": "Parra Alarcón",
+        "email": "12197160@atlantispro.cl",
+        "password": "$2b$10$BZtBOn2NK6VDy2hmE16iGOggTBbMAg3LDWX/qNYpSUW3vSFyrFlEG",
+        "rut": "121971607",
+        "profile": "tecnico",
+        "createdAt": "2025-03-05T17:41:45.220Z",
+        "updatedAt": "2025-03-19T16:27:28.845Z",
+        "dev_mode": false,
+        "disabled": false,
+        "resetPasswordToken": null,
+        "resetPasswordExpires": null
+    },
+    "tecnico_asignado_2": null,
+    "itemRepuestos": [
+        {
+            "id": 124,
+            "itemId": 46,
+            "repuestoId": 118,
+            "cantidad": 1,
+            "comentario": "",
+            "solicitarVisitaId": 186,
+            "estado": "pendiente",
+            "precio_venta": null,
+            "precio_compra": null,
+            "repuesto": {
+                "id": 118,
+                "familia": "plomeria",
+                "articulo": "LLAVE DE PASO 1/2 HE-HI",
+                "marca": "GEN",
+                "codigoBarra": "",
+                "precio_compra": "0.00",
+                "precio_venta": "6576.00",
+                "valor_uf": false,
+                "clima": false
+            }
+        }
+    ],
+    "itemFotos": [],
+    "causaRaiz": {
+        "id": 7,
+        "nombre": "Prevencion"
+    },
+    "activoFijoRepuestos": [],
+    "itemEstados": [
+        {
+            "id": 2348,
+            "itemId": 2,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2349,
+            "itemId": 3,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2350,
+            "itemId": 14,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2351,
+            "itemId": 15,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2352,
+            "itemId": 16,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2353,
+            "itemId": 17,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2354,
+            "itemId": 18,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2355,
+            "itemId": 19,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2356,
+            "itemId": 22,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2357,
+            "itemId": 23,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2358,
+            "itemId": 24,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2359,
+            "itemId": 25,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2360,
+            "itemId": 26,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2361,
+            "itemId": 27,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2362,
+            "itemId": 28,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2363,
+            "itemId": 29,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2364,
+            "itemId": 30,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2365,
+            "itemId": 31,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2366,
+            "itemId": 32,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2367,
+            "itemId": 33,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2368,
+            "itemId": 34,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2369,
+            "itemId": 35,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2370,
+            "itemId": 36,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2371,
+            "itemId": 37,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2372,
+            "itemId": 38,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2373,
+            "itemId": 39,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2374,
+            "itemId": 40,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2375,
+            "itemId": 41,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2376,
+            "itemId": 42,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2377,
+            "itemId": 43,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2378,
+            "itemId": 44,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2379,
+            "itemId": 45,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2380,
+            "itemId": 46,
+            "solicitarVisitaId": 186,
+            "comentario": "se cambia llave de lavadero ya que está se encontraba goteando",
+            "estado": "conforme"
+        },
+        {
+            "id": 2381,
+            "itemId": 47,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2382,
+            "itemId": 48,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2383,
+            "itemId": 49,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2384,
+            "itemId": 50,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2385,
+            "itemId": 51,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2386,
+            "itemId": 52,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2387,
+            "itemId": 119,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2388,
+            "itemId": 120,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "no_aplica"
+        },
+        {
+            "id": 2389,
+            "itemId": 121,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2390,
+            "itemId": 122,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        },
+        {
+            "id": 2391,
+            "itemId": 123,
+            "solicitarVisitaId": 186,
+            "comentario": "",
+            "estado": "conforme"
+        }
+    ],
+    "facturacion": {
+        "id_facturacion": 8,
+        "mes": "Mayo 2025",
+        "fecha_inicio": "2025-05-01",
+        "fecha_termino": "2025-05-31",
+        "hh": 0
+    },
+    "generada_por": {
+        "id": 9999,
+        "name": "Atlantis_IA",
+        "lastName": "",
+        "email": "soporte@atlantis.cl",
+        "password": "0",
+        "rut": "000000000",
+        "profile": "user",
+        "createdAt": "2025-04-21T07:15:18.032Z",
+        "updatedAt": "2025-05-06T00:52:51.535Z",
+        "dev_mode": false,
+        "disabled": false,
+        "resetPasswordToken": null,
+        "resetPasswordExpires": null
+    }
+}
