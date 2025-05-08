@@ -311,12 +311,12 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                       const SizedBox(height: 16),
                       _buildInfoRow(
                         Icons.calendar_today,
-                        'Fecha: ${currentVisit.fechaVisita ?? 'No especificada'}',
+                        'Fecha: ${_formatDate(currentVisit.fechaVisita)}',
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow(
                         Icons.access_time,
-                        'Hora: ${currentVisit.fechaVisita ?? 'No especificada'}',
+                        'Hora: ${_formatTime(currentVisit.fechaVisita)}',
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow(

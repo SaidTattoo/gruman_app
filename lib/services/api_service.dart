@@ -6,7 +6,8 @@ class ApiService {
   // Usa la IP de tu computadora (la puedes obtener con ipconfig en Windows o ifconfig en Mac/Linux)
   // static const String baseUrl =
   ////  'http://138.255.103.35:3000'; // URL de producción
-  static const String baseUrl = 'http://localhost:3000'; // URL de desarrollo
+  static const String baseUrl =
+      'http://138.255.103.38:3000'; // URL de desarrollo
 
   Future<Map<String, String>> get _headers async {
     final prefs = await SharedPreferences.getInstance();

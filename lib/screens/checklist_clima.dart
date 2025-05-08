@@ -1416,7 +1416,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                       'cantidad': repuesto.cantidad,
                       'comentario': repuesto.comentario ?? '',
                       'estado': 'pendiente',
-                      'precio_unitario': repuesto.repuesto.precio ?? 0,
+                      'precio_unitario': repuesto.repuesto.precioVenta ?? 0,
                       'repuesto': {
                         'id': repuesto.repuesto.id,
                         'nombre': repuesto.repuesto.articulo,
@@ -1467,7 +1467,7 @@ class _ChecklistClimaState extends State<ChecklistClima> {
                   'cantidad': repuesto.cantidad,
                   'comentario': repuesto.comentario ?? '',
                   'estado': 'pendiente',
-                  'precio_unitario': repuesto.repuesto.precio ?? 0,
+                  'precio_unitario': repuesto.repuesto.precioVenta ?? 0,
                   'repuesto': {
                     'id': repuesto.repuesto.id,
                     'nombre': repuesto.repuesto.articulo,

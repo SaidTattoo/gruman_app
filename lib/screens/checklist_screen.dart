@@ -107,6 +107,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
       setState(() {
         repuestos =
             (data as List).map((item) => Repuesto.fromJson(item)).toList();
+        print('Repuestos cargados: ${repuestos?.length}'); // Para debug
       });
     } catch (e) {
       print('Error cargando repuestos: $e');
@@ -423,57 +424,65 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () =>
-                          _showStateSelector(context, lista, subItem),
-                      icon: Icon(
-                        Icons.check_circle,
-                        color: _getStateColor(state),
-                      ),
-                      label: Text(
-                        _getStateText(state),
-                        style: TextStyle(
-                          color: _getStateColor(state),
-                        ),
-                      ),
+                // Botón de estado
+                OutlinedButton.icon(
+                  onPressed: () => _showStateSelector(context, lista, subItem),
+                  icon: Icon(
+                    Icons.check_circle,
+                    color: _getStateColor(state),
+                  ),
+                  label: Text(
+                    _getStateText(state),
+                    style: TextStyle(
+                      color: _getStateColor(state),
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => _showPhotoOptions(subItem.id),
-                      icon: const Icon(Icons.photo_camera),
-                      label: const Text('Agregar Foto'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => _showCommentDialog(subItem.id),
-                      icon: const Icon(Icons.comment),
-                      label: const Text('Comentario'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF3F3FFF),
-                      ),
-                    ),
-                    if ((state == CheckState.noConforme ||
-                        state == CheckState.conforme))
-                      TextButton.icon(
-                        onPressed: () => _showRepuestosDialog(subItem.id),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Repuesto'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF3F3FFF),
-                        ),
-                      ),
-                  ],
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                  ),
                 ),
+                const SizedBox(height: 8),
+                // Botón de foto
+                OutlinedButton.icon(
+                  onPressed: () => _showPhotoOptions(subItem.id),
+                  icon: const Icon(Icons.photo_camera),
+                  label: const Text('Agregar Foto'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF3F3FFF),
+                    alignment: Alignment.centerLeft,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Botón de comentario
+                OutlinedButton.icon(
+                  onPressed: () => _showCommentDialog(subItem.id),
+                  icon: const Icon(Icons.comment),
+                  label: const Text('Comentario'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF3F3FFF),
+                    alignment: Alignment.centerLeft,
+                  ),
+                ),
+                // Botón de repuesto (solo si es conforme o no conforme)
+                if (state == CheckState.noConforme ||
+                    state == CheckState.conforme) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showRepuestosDialog(subItem.id),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Repuesto'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF3F3FFF),
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
+                ],
                 // Mostrar comentario si existe
-                if (comment.isNotEmpty)
+                if (comment.isNotEmpty) ...[
+                  const SizedBox(height: 8),
                   Container(
-                    margin: const EdgeInsets.only(top: 8, bottom: 8),
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.grey[100],
@@ -497,8 +506,10 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                       ],
                     ),
                   ),
-                // Mostrar fotos en grid
-                if (photos.isNotEmpty)
+                ],
+                // Mostrar fotos
+                if (photos.isNotEmpty) ...[
+                  const SizedBox(height: 8),
                   Container(
                     margin: const EdgeInsets.only(top: 8, bottom: 8),
                     child: Wrap(
@@ -510,10 +521,11 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                       }).toList(),
                     ),
                   ),
+                ],
                 // Lista de repuestos
-                if (repuestosAsignados.isNotEmpty)
+                if (repuestosAsignados.isNotEmpty) ...[
+                  const SizedBox(height: 8),
                   Container(
-                    margin: const EdgeInsets.only(top: 8),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.grey.shade300),
                       borderRadius: BorderRadius.circular(8),
@@ -525,6 +537,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                           .toList(),
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -704,53 +717,118 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
 
   // Mantener el widget _buildRepuestoItem como estaba antes
   Widget _buildRepuestoItem(RepuestoAsignado repuestoAsignado, int subItemId) {
-    return ListTile(
-      dense: true,
-      title: Text(
-        repuestoAsignado.repuesto.articulo,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300),
+        ),
       ),
-      subtitle: Text(
-        '${repuestoAsignado.repuesto.familia} - ${repuestoAsignado.repuesto.marca}',
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Wrap(
-        spacing: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.remove_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                if (repuestoAsignado.cantidad > 1) {
-                  repuestoAsignado.cantidad--;
-                }
-              });
-            },
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      repuestoAsignado.repuesto.articulo,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${repuestoAsignado.repuesto.familia} - ${repuestoAsignado.repuesto.marca}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    Text(
+                      'Código: ${repuestoAsignado.repuesto.codigoBarra}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    if (repuestoAsignado.repuesto.precioVenta > 0)
+                      Text(
+                        'Precio: \$${repuestoAsignado.repuesto.precioVenta.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.remove_circle_outline, size: 20),
+                        onPressed: () {
+                          setState(() {
+                            if (repuestoAsignado.cantidad > 1) {
+                              repuestoAsignado.cantidad--;
+                            }
+                          });
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          '${repuestoAsignado.cantidad}',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                      ),
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.add_circle_outline, size: 20),
+                        onPressed: () {
+                          setState(() {
+                            repuestoAsignado.cantidad++;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.red, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        subItemRepuestos[subItemId]?.remove(repuestoAsignado);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
-          Text('${repuestoAsignado.cantidad}'),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.add_circle_outline, size: 20),
-            onPressed: () {
-              setState(() {
-                repuestoAsignado.cantidad++;
-              });
-            },
-          ),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-            onPressed: () {
-              setState(() {
-                subItemRepuestos[subItemId]?.remove(repuestoAsignado);
-              });
-            },
-          ),
+          if (repuestoAsignado.comentario?.isNotEmpty ?? false)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                repuestoAsignado.comentario!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1232,7 +1310,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                       'cantidad': repuesto.cantidad,
                       'comentario': repuesto.comentario ?? '',
                       'estado': 'pendiente',
-                      'precio_unitario': repuesto.repuesto.precio ?? 0,
+                      'precio_unitario': repuesto.repuesto.precioVenta ?? 0,
                       'repuesto': {
                         'id': repuesto.repuesto.id,
                         'nombre': repuesto.repuesto.articulo,
@@ -1283,7 +1361,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                   'cantidad': repuesto.cantidad,
                   'comentario': repuesto.comentario ?? '',
                   'estado': 'pendiente',
-                  'precio_unitario': repuesto.repuesto.precio ?? 0,
+                  'precio_unitario': repuesto.repuesto.precioVenta ?? 0,
                   'repuesto': {
                     'id': repuesto.repuesto.id,
                     'nombre': repuesto.repuesto.articulo,

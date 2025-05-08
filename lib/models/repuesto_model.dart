@@ -4,11 +4,10 @@ class Repuesto {
   final String articulo;
   final String marca;
   final String codigoBarra;
-  final int precio;
-  final int precioNetoCompra;
-  final int sobreprecio;
-  final int precioIva;
-  final int precioBruto;
+  final double precioCompra;
+  final double precioVenta;
+  final bool valorUf;
+  final bool clima;
 
   Repuesto({
     required this.id,
@@ -16,25 +15,25 @@ class Repuesto {
     required this.articulo,
     required this.marca,
     required this.codigoBarra,
-    required this.precio,
-    required this.precioNetoCompra,
-    required this.sobreprecio,
-    required this.precioIva,
-    required this.precioBruto,
+    required this.precioCompra,
+    required this.precioVenta,
+    this.valorUf = false,
+    this.clima = false,
   });
 
   factory Repuesto.fromJson(Map<String, dynamic> json) {
     return Repuesto(
-      id: json['id'] as int,
-      familia: json['familia'] as String,
-      articulo: json['articulo'] as String,
-      marca: json['marca'] as String,
-      codigoBarra: json['codigoBarra'] as String,
-      precio: json['precio'] as int,
-      precioNetoCompra: json['precioNetoCompra'] as int,
-      sobreprecio: json['sobreprecio'] as int,
-      precioIva: json['precioIva'] as int,
-      precioBruto: json['precioBruto'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      familia: json['familia']?.toString() ?? '',
+      articulo: json['articulo']?.toString() ?? '',
+      marca: json['marca']?.toString() ?? '',
+      codigoBarra: json['codigoBarra']?.toString() ?? '',
+      precioCompra:
+          double.tryParse(json['precio_compra']?.toString() ?? '0') ?? 0.0,
+      precioVenta:
+          double.tryParse(json['precio_venta']?.toString() ?? '0') ?? 0.0,
+      valorUf: json['valor_uf'] as bool? ?? false,
+      clima: json['clima'] as bool? ?? false,
     );
   }
 }

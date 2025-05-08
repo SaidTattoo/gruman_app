@@ -69,10 +69,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
-      String rut = _rutController.text.replaceAll(RegExp(r'[^0-9kK]'), '');
-      String password = _passwordController.text;
-
       try {
+        // Limpia el RUT y lo convierte a mayúsculas
+        String rut = _rutController.text
+            .replaceAll('.', '')
+            .replaceAll('-', '')
+            .toUpperCase();
+        String password = _passwordController.text;
+
         final responseData = await _apiService.post('auth/login_tecnico', {
           'rut': rut,
           'password': password,
@@ -81,7 +85,6 @@ class _LoginScreenState extends State<LoginScreen> {
         if (responseData['token'] != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('jwtToken', responseData['token']);
-
           final decodedToken = JwtDecoder.decode(responseData['token']);
 
           if (mounted) {
@@ -97,7 +100,10 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${e.toString()}')),
+            SnackBar(
+              content: Text('Error de inicio de sesión: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -154,7 +160,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: _rutController,
                           decoration: InputDecoration(
-                            labelText: 'Rut',
+                            labelText: 'RUT',
+                            hintText: 'Ej: 19185237-K',
+                            prefixIcon: Icon(Icons.person_outline),
                             filled: true,
                             fillColor: Colors.grey[100],
                             border: OutlineInputBorder(
@@ -170,24 +178,23 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderSide: BorderSide.none,
                             ),
                           ),
-                          keyboardType: TextInputType.number,
+                          keyboardType: TextInputType.text,
+                          textCapitalization: TextCapitalization.characters,
                           inputFormatters: [
-                            LengthLimitingTextInputFormatter(
-                                12), // Limita la longitud incluyendo puntos y guión
                             FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9kK\.-]')),
+                                RegExp(r'[0-9kK-]')),
+                            LengthLimitingTextInputFormatter(10),
+                            RutFormatter(),
                           ],
-                          onChanged: (value) {
-                            final formatted = _formatRut(value);
-                            if (formatted != value) {
-                              _rutController.value = TextEditingValue(
-                                text: formatted,
-                                selection: TextSelection.collapsed(
-                                    offset: formatted.length),
-                              );
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Por favor ingrese su RUT';
                             }
+                            if (value.length >= 9 && !isValidRut(value)) {
+                              return 'RUT inválido';
+                            }
+                            return null;
                           },
-                          validator: _validateRut,
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
@@ -269,5 +276,84 @@ class _LoginScreenState extends State<LoginScreen> {
     _rutController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  bool isValidRut(String rut) {
+    try {
+      // Limpia el RUT y convierte a mayúsculas
+      rut = rut.replaceAll('.', '').toUpperCase();
+
+      // Verifica que el RUT tenga un guión
+      if (!rut.contains('-')) {
+        return false;
+      }
+
+      List<String> rutParts = rut.split('-');
+      if (rutParts.length != 2) {
+        return false;
+      }
+
+      String number = rutParts[0];
+      String dv = rutParts[1];
+
+      // Verifica que el número sea válido y el DV sea un número o K
+      if (!RegExp(r'^[0-9]{7,8}$').hasMatch(number) ||
+          !RegExp(r'^[0-9K]$').hasMatch(dv)) {
+        return false;
+      }
+
+      // Algoritmo para calcular dígito verificador
+      int sum = 0;
+      int multiplier = 2;
+
+      // Iteramos de derecha a izquierda
+      for (int i = number.length - 1; i >= 0; i--) {
+        sum += int.parse(number[i]) * multiplier;
+        multiplier = multiplier == 7 ? 2 : multiplier + 1;
+      }
+
+      int remainder = sum % 11;
+      String expectedDv = (11 - remainder).toString();
+
+      // Manejo de casos especiales
+      if (expectedDv == '11') expectedDv = '0';
+      if (expectedDv == '10') expectedDv = 'K';
+
+      // Comparación case-insensitive para K
+      return dv.toUpperCase() == expectedDv;
+    } catch (e) {
+      return false; // Si hay cualquier error en el proceso, el RUT es inválido
+    }
+  }
+}
+
+// Add this formatter to automatically format the RUT
+class RutFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text.toUpperCase(); // Convertir a mayúsculas
+
+    // Remover cualquier guión existente
+    text = text.replaceAll('-', '');
+
+    // Si la longitud es 0 o 1, retornar el texto tal cual
+    if (text.length <= 1)
+      return TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+
+    // Insertar el guión antes del último carácter
+    final withDash = text.substring(0, text.length - 1) +
+        '-' +
+        text.substring(text.length - 1);
+
+    return TextEditingValue(
+      text: withDash,
+      selection: TextSelection.collapsed(offset: withDash.length),
+    );
   }
 }
